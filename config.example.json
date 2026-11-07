@@ -1,0 +1,17 @@
+{
+  "name": "汤圆",
+  "base_url": "https://api.deepseek.com/v1",
+  "model": "deepseek-chat",
+  "api_key": "在这里粘贴你的 key",
+  "voice": "zh-CN-XiaoxiaoNeural",
+  "max_steps": 5,
+  "pitch": 0,
+  "asr": "whisper",
+  "whisper_size": "small",
+  "vision_base_url": "https://open.bigmodel.cn/api/paas/v4",
+  "vision_model": "glm-4v-flash",
+  "vision_api_key": "",
+  "body": "mac",
+  "body_url": "",
+  "body_timeout": 30
+}
