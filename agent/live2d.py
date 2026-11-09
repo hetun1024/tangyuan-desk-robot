@@ -67,7 +67,7 @@ def _bg(w: int, h: int) -> np.ndarray:
 
 
 class Model:
-    def __init__(self, art_dir: str = ART, size: int = 480):
+    def __init__(self, art_dir: str = ART, size: int = 720):
         self.size = size
         self.frames: Dict[str, np.ndarray] = {}
         for key, name in FILES.items():

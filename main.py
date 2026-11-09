@@ -131,10 +131,27 @@ def face_down() -> None:
         _face_proc = None
 
 
+MOOD_FILE = os.path.expanduser("~/.tangyuan_mood")
+
+
+def _write_mood(emotion: str) -> None:
+    """告诉桌面上的那个她：现在该是什么表情。
+
+    桌面宠物是独立的原生窗口，不经过 Python，所以用一个文件传话。
+    她没开的时候就没人读，写失败也无所谓。
+    """
+    try:
+        with open(MOOD_FILE, "w", encoding="utf-8") as fh:
+            fh.write(emotion)
+    except OSError:
+        pass
+
+
 def _face(emotion: str) -> None:
-    """改表情；表情窗口没开就什么都不发生。"""
+    """改表情；表情窗口和桌面宠物都跟着变。"""
     import urllib.request
 
+    _write_mood(emotion)
     try:
         urllib.request.urlopen(FACE_URL + "/emotion?name=" + emotion, timeout=0.5).read()
     except Exception:  # noqa: BLE001
