@@ -64,13 +64,16 @@ def test_渲染不是全黑():
     assert float(np.mean(img)) > 5, "立绘没加载上"
 
 
-def test_闭眼和睁眼不一样():
+def test_闭眼只动眼睛():
     import numpy as np
 
     f = Face("idle")
-    a = f.render(128, now=0.0, t=0.0, blink=1.0)
-    b = f.render(128, now=0.0, t=0.0, blink=0.0)
-    assert float(np.abs(a.astype(int) - b.astype(int)).mean()) > 0.5
+    a = f.render(160, now=0.0, t=0.0, blink=1.0)
+    b = f.render(160, now=0.0, t=0.0, blink=0.0)
+    d = np.abs(a.astype(int) - b.astype(int)).max(2)
+    mask = f.model.eye_mask > 0.05
+    assert float(d[mask].mean()) > 2.0, "眼睛应该变"
+    assert int(d[~mask].max()) <= 3, "眼睛以外不该动，否则整张图会闪"
 
 
 def test_每种情绪都能渲染():
@@ -94,13 +97,16 @@ def test_同一个情绪不会重新触发():
     assert f.name == "happy"
 
 
-def test_说话时嘴会动():
+def test_说话只动嘴():
     import numpy as np
 
     f = Face("talking")
-    a = f.render(128, now=0.0, t=0.10, blink=1.0)
-    b = f.render(128, now=0.0, t=0.35, blink=1.0)
-    assert float(np.abs(a.astype(int) - b.astype(int)).mean()) > 0.2
+    a = f.render(160, now=0.0, t=0.10, blink=1.0)
+    b = f.render(160, now=0.0, t=0.35, blink=1.0)
+    d = np.abs(a.astype(int) - b.astype(int)).max(2)
+    mask = f.model.mouth_mask > 0.05
+    assert float(d[mask].mean()) > 1.0, "嘴应该变"
+    assert int(d[~mask].max()) <= 3, "嘴以外不该动"
 
 
 def main():

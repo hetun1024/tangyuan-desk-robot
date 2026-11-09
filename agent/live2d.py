@@ -36,6 +36,12 @@ FILES = {
     "wave": "09_挥手",
 }
 
+# 五官在 900×900 立绘里的位置（量出来的，不是猜的）
+#   cx, cy, rx, ry —— 用椭圆是因为边缘要柔，硬边会有接缝
+EYE = (457, 152, 62, 34)      # 两只眼
+MOUTH = (452, 188, 30, 18)    # 嘴
+HEAD = (452, 190, 120, 130)   # 整个头，换表情时只动这一块
+
 # 情绪 → 用哪张图
 MOODS = {
     "idle": "idle", "listening": "idle", "thinking": "idle",
@@ -77,6 +83,32 @@ class Model:
         if "idle" not in self.frames:
             raise FileNotFoundError("找不到立绘：%s" % art_dir)
         self.bg = _bg(self.size, self.size)
+        self.eye_mask = self._ellipse_mask(self.size, EYE)
+        self.mouth_mask = self._ellipse_mask(self.size, MOUTH)
+        self.head_mask = self._ellipse_mask(self.size, HEAD, feather=0.5)
+
+    @staticmethod
+    def _ellipse_mask(size: int, box, feather: float = 0.35) -> np.ndarray:
+        """柔边的椭圆遮罩（0..1）。feather 越大边缘越糊。"""
+        cx, cy, rx, ry = [v * size / 900.0 for v in box]
+        yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+        d = np.sqrt(((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2)
+        inner = 1.0 - feather
+        m = np.clip((1.0 - d) / max(feather, 1e-3), 0, 1)
+        return cv2.GaussianBlur(m, (0, 0), size * 0.006)
+
+    def _region_mix(self, a: np.ndarray, b: np.ndarray, k: float,
+                    mask: np.ndarray) -> np.ndarray:
+        """只在遮罩范围内混合 b，其他地方**一个像素都不动**。"""
+        if k <= 0.001:
+            return a
+        w = (mask * min(1.0, k))[..., None]
+        pa = a.astype(np.float32)
+        pb = b.astype(np.float32)
+        out = pa.copy()
+        out[..., :3] = pa[..., :3] * (1 - w) + pb[..., :3] * w
+        out[..., 3] = pa[..., 3] * (1 - w[..., 0]) + pb[..., 3] * w[..., 0]
+        return out.astype(np.uint8)
 
     def _fit(self, img: np.ndarray) -> np.ndarray:
         """缩放到画布大小，等比缩放、居中。"""
@@ -114,33 +146,24 @@ class Model:
     def frame(self, mood: str = "idle", t: float = 0.0,
               blink: float = 0.0, talk: float = 0.0,
               fade: Optional[np.ndarray] = None) -> np.ndarray:
-        """mood 是情绪名；blink/talk 是 0..1 的混合权重。"""
+        """mood 是情绪名；blink/talk 是 0..1 的混合权重。
+
+        身体永远不动 —— 只在眼睛、嘴、头这三块地方做混合。
+        整张混会让身体轻轻飘，看起来像在闪。
+        """
         key = MOODS.get(mood, "idle")
         base = self.frames.get(key, self.frames["idle"])
 
         if fade is not None:
-            base = self._mix(fade, base, 0.35)
+            base = self._region_mix(fade, base, 0.35, self.head_mask)
 
         if blink > 0.01 and "blink" in self.frames:
-            base = self._mix(base, self.frames["blink"], blink)
+            base = self._region_mix(base, self.frames["blink"], blink, self.eye_mask)
         if talk > 0.01 and "talk" in self.frames:
-            base = self._mix(base, self.frames["talk"], talk)
+            base = self._region_mix(base, self.frames["talk"], talk, self.mouth_mask)
 
-        # 呼吸：整体极轻微地上下缩放；微晃：左右各两像素
-        br = np.sin(t * 1.05) * 0.006
-        sx = 1.0 + br * 0.4
-        sy = 1.0 + br
-        dx = np.sin(t * 0.37) * 2.0
-        dy = np.sin(t * 1.05 + 1.2) * 1.5
-        h, w = self.size, self.size
-        m = cv2.getRotationMatrix2D((w / 2, h * 0.95), 0, 1.0)
-        m[0, 0], m[0, 2] = sx, (1 - sx) * w / 2 + dx
-        m[1, 1], m[1, 2] = sy, (1 - sy) * h * 0.95 + dy
-        warped = cv2.warpAffine(base, m, (w, h), flags=cv2.INTER_LINEAR,
-                                borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
-
-        alpha = (warped[..., 3:4].astype(np.float32) / 255.0)
-        rgb = warped[..., :3].astype(np.float32)
+        alpha = (base[..., 3:4].astype(np.float32) / 255.0)
+        rgb = base[..., :3].astype(np.float32)
         out = rgb * alpha + self.bg.astype(np.float32) * (1 - alpha)
         return out.astype(np.uint8)
 
