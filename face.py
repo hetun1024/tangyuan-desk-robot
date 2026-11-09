@@ -70,6 +70,7 @@ def _p(**kw):
 
 
 STATES = list(live2d.MOODS)
+ORDER = STATES  # 键盘 1-9 / 空格 轮播用的顺序
 
 CONVERSATION = {"idle", "listening", "thinking", "talking"}
 
@@ -221,12 +222,14 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.shot:
+        shot_model = live2d.Model()
         tile = args.size // 2
         cols = 4
         rows = (len(ORDER) + cols - 1) // cols
         sheet = np.full((rows * tile, cols * tile, 3), 12, np.uint8)
         for i, name in enumerate(ORDER):
-            im = st.face.model.frame(name, t=0.9)
+            im = shot_model.frame(name, t=0.9)
+            im = cv2.resize(im, (tile, tile), interpolation=cv2.INTER_AREA)
             cv2.putText(im, name, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                         (110, 110, 120), 1, cv2.LINE_AA)
             r, c = divmod(i, cols)
