@@ -64,6 +64,13 @@ def test_渲染不是全黑():
     assert float(np.mean(img)) > 5, "立绘没加载上"
 
 
+def _mask(model, which, size):
+    import cv2
+
+    m = model.eye_mask if which == "eye" else model.mouth_mask
+    return cv2.resize(m, (size, size)) > 0.05
+
+
 def test_闭眼只动眼睛():
     import numpy as np
 
@@ -71,7 +78,7 @@ def test_闭眼只动眼睛():
     a = f.render(160, now=0.0, t=0.0, blink=1.0)
     b = f.render(160, now=0.0, t=0.0, blink=0.0)
     d = np.abs(a.astype(int) - b.astype(int)).max(2)
-    mask = f.model.eye_mask > 0.05
+    mask = _mask(f.model, "eye", 160)
     assert float(d[mask].mean()) > 2.0, "眼睛应该变"
     assert int(d[~mask].max()) <= 3, "眼睛以外不该动，否则整张图会闪"
 
@@ -104,7 +111,7 @@ def test_说话只动嘴():
     a = f.render(160, now=0.0, t=0.10, blink=1.0)
     b = f.render(160, now=0.0, t=0.35, blink=1.0)
     d = np.abs(a.astype(int) - b.astype(int)).max(2)
-    mask = f.model.mouth_mask > 0.05
+    mask = _mask(f.model, "mouth", 160)
     assert float(d[mask].mean()) > 1.0, "嘴应该变"
     assert int(d[~mask].max()) <= 3, "嘴以外不该动"
 
