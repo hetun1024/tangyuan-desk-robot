@@ -4,6 +4,9 @@
 // 只有原生 NSWindow 能让窗口背景真正透明，立绘才能"浮"在桌面上。
 
 #import <Cocoa/Cocoa.h>
+#import <sys/file.h>
+#import <fcntl.h>
+#import <unistd.h>
 
 static NSString *const kMoodFile = @".tangyuan_mood";
 
@@ -213,6 +216,11 @@ static NSString *const kMoodFile = @".tangyuan_mood";
 @end
 
 int main(int argc, const char *argv[]) {
+    // 单例：已经有一个在跑就安静退出，不然桌面上会出现两个她
+    int lockFd = open("/tmp/.tangyuan_pet.lock", O_CREAT | O_RDWR, 0644);
+    if (lockFd >= 0 && flock(lockFd, LOCK_EX | LOCK_NB) != 0) {
+        return 0;
+    }
     @autoreleasepool {
         NSApplication *app = [NSApplication sharedApplication];
         PetApp *delegate = [[PetApp alloc] init];

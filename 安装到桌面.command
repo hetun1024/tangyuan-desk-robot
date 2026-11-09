@@ -57,11 +57,37 @@ PLIST
 launchctl unload "$PLIST_DIR/cc.drobotics.tangyuan.pet.plist" 2>/dev/null
 launchctl load "$PLIST_DIR/cc.drobotics.tangyuan.pet.plist" 2>/dev/null
 
+# 5. 大脑也设成后台常驻（不用开终端）
+echo "[5/5] 设置「脑子」后台常驻…"
+BRAIN_LOG="$HOME/Library/Logs/tangyuan-brain.log"
+PROJ="$(pwd)"
+cat > "$PLIST_DIR/cc.drobotics.tangyuan.brain.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>cc.drobotics.tangyuan.brain</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/python3</string><string>-u</string>
+    <string>$PROJ/main.py</string>
+    <string>--talk</string><string>--no-face</string>
+  </array>
+  <key>WorkingDirectory</key><string>$PROJ</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>StandardOutPath</key><string>$BRAIN_LOG</string>
+  <key>StandardErrorPath</key><string>$BRAIN_LOG</string>
+</dict></plist>
+PLIST
+launchctl unload "$PLIST_DIR/cc.drobotics.tangyuan.brain.plist" 2>/dev/null
+launchctl load "$PLIST_DIR/cc.drobotics.tangyuan.brain.plist" 2>/dev/null
+echo "       日志：$BRAIN_LOG"
+
 open "$APP"
 echo
-echo "装好了。她现在应该在屏幕右下角。"
+echo "装好了。她现在应该在屏幕右下角，而且可以直接说话。"
 echo "  · 拖动她：按住鼠标拖"
 echo "  · 关掉她：屏幕顶部菜单栏「汤圆」→ 退出"
-echo "  · 卸载：删掉 ~/Applications/汤圆.app 和 ~/Library/LaunchAgents/cc.drobotics.tangyuan.pet.plist"
+echo "  · 说话：直接说，不用按键（第一次会问麦克风权限，点允许）"
+echo "  · 卸载：删掉 ~/Applications/汤圆.app 和 ~/Library/LaunchAgents/cc.drobotics.tangyuan.*.plist"
 echo
 read -n1 -p "按任意键关闭窗口"

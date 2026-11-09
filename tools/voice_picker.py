@@ -116,9 +116,17 @@ def main() -> int:
             star = " ★" if (vid == cur_voice and pitch == cur_pitch) else ""
             print("  %2d  %-30s%s" % (len(entries), label, star))
 
-    show("萌系（把年轻女声抬高音高）", [(v, l, p) for v, l, p in tts_edge.CUTE_VOICES])
-    show("在线原生（不调音高）", [(v, l, p) for v, l, p in tts_edge.EDGE_VOICES])
-    show("本机（不联网，机械一点）", [(n, "%s · 本机" % n, 0) for n, _loc in local_usable()])
+    # 顺序很重要：先给"一定能用"的，最后才是"要联网、可能连不上"的
+    show("离线神经语音（断网也能用，最稳）",
+         [(k, "华言 · 离线女声", 0) for k in voice.piper_voices()])
+    show("本机音色（不联网，机械一点）",
+         [(n, "%s · 本机" % n, 0) for n, _loc in local_usable()])
+    show("在线音色（要联网，现在经常连不上）",
+         [(v, l, p) for v, l, p in tts_edge.EDGE_VOICES],
+         note="这些更好听，但网络被拦的时候一句都出不来。")
+    show("在线·萌系（把音高抬高）",
+         [(v, l, p) for v, l, p in tts_edge.CUTE_VOICES],
+         note="同样需要网络。")
 
     print()
     print("  输入编号试听，q 退出")
@@ -141,7 +149,8 @@ def main() -> int:
 
         name, pitch = entries[idx]
         online = tts_edge.is_edge_voice(name)
-        print("  ▶ %s  %s（%s）" % (name, ("+%dHz" % pitch) if pitch else "", "在线" if online else "本机"))
+        kind = "在线" if online else ("离线" if name.startswith("piper:") else "本机")
+        print("  ▶ %s  %s（%s）" % (name, ("+%dHz" % pitch) if pitch else "", kind))
 
         try:
             voice.speak(SAMPLE, name, enabled=True, pitch=pitch)

@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -19,6 +20,65 @@ from typing import Optional
 from . import tts_edge
 
 LOCAL_FALLBACK = tts_edge.LOCAL_FALLBACK
+
+# 离线神经语音（Piper）：断网也能用，比系统音色自然得多。
+# 音色名形如 "piper:zh_CN-huayan-medium"
+PIPER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "models", "piper")
+_piper_cache = {}
+
+
+def piper_voices() -> list:
+    """models/piper 目录里有哪些离线音色。"""
+    if not os.path.isdir(PIPER_DIR):
+        return []
+    out = []
+    for f in sorted(os.listdir(PIPER_DIR)):
+        if f.endswith(".onnx"):
+            out.append("piper:" + f[:-5])
+    return out
+
+
+def _piper_model(key: str):
+    """加载（并缓存）一个 Piper 音色。"""
+    if key in _piper_cache:
+        return _piper_cache[key]
+    from piper import PiperVoice
+
+    path = os.path.join(PIPER_DIR, key + ".onnx")
+    v = PiperVoice.load(path)
+    _piper_cache[key] = v
+    return v
+
+
+def _say_piper(text: str, key: str, wpm: int = 175) -> bool:
+    """用离线音色念。合成到临时 wav 再播。"""
+    import tempfile
+    import wave as _wave
+
+    try:
+        v = _piper_model(key)
+    except Exception as e:  # noqa: BLE001
+        print("（离线音色加载失败：%s）" % str(e)[:80], file=sys.stderr)
+        return False
+
+    length = 1.0 + (175 - wpm) / 90.0 if wpm else 1.0
+    length = max(0.7, min(1.6, length))
+    try:
+        fd, path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        from piper import SynthesisConfig
+
+        cfg = SynthesisConfig(length_scale=length)
+        with _wave.open(path, "wb") as w:
+            # set_wav_format=True：让 piper 自己写头，省得漏声道
+            v.synthesize_wav(text, w, syn_config=cfg, set_wav_format=True)
+        subprocess.run(["afplay", path], timeout=120)
+        os.unlink(path)
+        return True
+    except Exception as e:  # noqa: BLE001
+        print("（离线音色合成失败：%s）" % str(e)[:80], file=sys.stderr)
+        return False
 
 # 在线音色挂一次就别每次都试了：每句都要等一两秒超时，还会刷屏。
 _edge_down = False
@@ -103,6 +163,11 @@ def speak(
         return  # 整句都是括号里的动作，没什么可念的
 
     wpm = rate or 175
+
+    if (voice or "").startswith("piper:"):
+        if _say_piper(text, voice.split(":", 1)[1], wpm):
+            return
+        voice = LOCAL_FALLBACK  # 失败就退回系统音色
 
     global _edge_down, _warned
 
