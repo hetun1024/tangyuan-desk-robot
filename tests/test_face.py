@@ -64,6 +64,9 @@ def test_渲染不是全黑():
     assert float(np.mean(img)) > 5, "立绘没加载上"
 
 
+import math  # noqa: E402
+
+
 def _mask(model, which, size):
     import cv2
 
@@ -108,8 +111,9 @@ def test_说话只动嘴():
     import numpy as np
 
     f = Face("talking")
-    a = f.render(160, now=0.0, t=0.10, blink=1.0)
-    b = f.render(160, now=0.0, t=0.35, blink=1.0)
+    # t 取一个张不开、一个张到最大（sin(t*7) = 0 和 1）
+    a = f.render(160, now=0.0, t=0.0, blink=1.0)
+    b = f.render(160, now=0.0, t=math.pi / 14, blink=1.0)
     d = np.abs(a.astype(int) - b.astype(int)).max(2)
     mask = _mask(f.model, "mouth", 160)
     assert float(d[mask].mean()) > 1.0, "嘴应该变"
