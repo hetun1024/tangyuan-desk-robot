@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,26 @@ LOCAL_FALLBACK = tts_edge.LOCAL_FALLBACK
 # 在线音色挂一次就别每次都试了：每句都要等一两秒超时，还会刷屏。
 _edge_down = False
 _warned = False
+
+
+# 括号里的动作提示：写给人看的，不该念出来。
+# 例：（小声）别闹，说人话。 → 别闹，说人话。
+_STAGE = re.compile(r"[（(][^（）()]*[）)]")
+_MARK = re.compile(r"[*_`~]+")
+
+
+def for_speech(text: str) -> str:
+    """去掉不该读出来的部分：括号动作、markdown 记号、多余空白。"""
+    t = text or ""
+    for _ in range(4):  # 嵌套括号多跑几遍
+        new = _STAGE.sub("", t)
+        if new == t:
+            break
+        t = new
+    t = _MARK.sub("", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    t = t.strip("，,、 ")
+    return t
 
 
 def available() -> bool:
@@ -76,6 +97,10 @@ def speak(
     """
     if not enabled or not text:
         return
+
+    text = for_speech(text)
+    if not text:
+        return  # 整句都是括号里的动作，没什么可念的
 
     wpm = rate or 175
 
