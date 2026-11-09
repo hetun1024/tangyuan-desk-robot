@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="30%" r="65%">
+      <stop offset="0%" stop-color="#5e4874"/>
+      <stop offset="55%" stop-color="#332541"/>
+      <stop offset="100%" stop-color="#15111c"/>
+    </radialGradient>
+    <radialGradient id="skin" cx="44%" cy="28%" r="78%">
+      <stop offset="0%" stop-color="#fff6f2"/>
+      <stop offset="55%" stop-color="#fdeae4"/>
+      <stop offset="100%" stop-color="#f2cdc6"/>
+    </radialGradient>
+    <radialGradient id="blush" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f4929f" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#f4929f" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="hair" x1="0.15" y1="0" x2="0.55" y2="1">
+      <stop offset="0%" stop-color="#fef5e4"/>
+      <stop offset="30%" stop-color="#f2ddba"/>
+      <stop offset="65%" stop-color="#e4c99c"/>
+      <stop offset="100%" stop-color="#c9a877"/>
+    </linearGradient>
+    <linearGradient id="hairShade" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0%" stop-color="#d6b585"/>
+      <stop offset="100%" stop-color="#b08a56"/>
+    </linearGradient>
+    <radialGradient id="bunGrad" cx="34%" cy="28%" r="72%">
+      <stop offset="0%" stop-color="#fffaea"/>
+      <stop offset="45%" stop-color="#f3e0bf"/>
+      <stop offset="100%" stop-color="#d2b284"/>
+    </radialGradient>
+    <linearGradient id="dress" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffe6f0"/>
+      <stop offset="45%" stop-color="#f9c9da"/>
+      <stop offset="100%" stop-color="#e9a0bb"/>
+    </linearGradient>
+    <linearGradient id="dressDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f2b8ce"/>
+      <stop offset="100%" stop-color="#d483a6"/>
+    </linearGradient>
+    <linearGradient id="lace" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#fdeef4"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f9e8c0"/>
+      <stop offset="45%" stop-color="#e4c084"/>
+      <stop offset="100%" stop-color="#c3974f"/>
+    </linearGradient>
+    <radialGradient id="iris" cx="42%" cy="26%" r="72%">
+      <stop offset="0%" stop-color="#bcdcf1"/>
+      <stop offset="42%" stop-color="#6d9dc4"/>
+      <stop offset="100%" stop-color="#2c5a82"/>
+    </radialGradient>
+    <linearGradient id="lip" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f2909f"/>
+      <stop offset="100%" stop-color="#d06478"/>
+    </linearGradient>
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <filter id="soft2" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="5"/>
+    </filter>
+    <clipPath id="eyeLC">
+      <path d="M 270 374 C 286 342 318 328 348 334 C 372 340 388 358 386 378
+               C 382 406 344 426 312 421 C 290 417 272 398 270 374 Z"/>
+    </clipPath>
+    <clipPath id="eyeRC">
+      <path d="M 530 374 C 514 342 482 328 452 334 C 428 340 412 358 414 378
+               C 418 406 456 426 488 421 C 510 417 528 398 530 374 Z"/>
+    </clipPath>
+    <filter id="glow" x="-70%" y="-70%" width="240%" height="240%">
+      <feGaussianBlur stdDeviation="30"/>
+    </filter>
+  </defs>
+
+  <rect width="800" height="800" fill="url(#bgGlow)"/>
+  <ellipse cx="400" cy="250" rx="290" ry="270" fill="#ffd0e4" opacity="0.12" filter="url(#glow)"/>
+
+  <!-- ================= 后发 ================= -->
+  <g id="hair-back">
+    <path d="M 400 120 C 205 120 152 300 160 430 C 168 560 178 660 200 760
+             L 400 790 L 600 760 C 622 660 632 560 640 430
+             C 648 300 595 120 400 120 Z" fill="url(#hairShade)"/>
+  </g>
+
+  <!-- ================= 身体 ================= -->
+  <g id="body">
+    <path d="M 358 520 L 442 520 L 446 640 L 354 640 Z" fill="url(#skin)"/>
+    <path d="M 358 520 L 442 520 L 443 566 L 357 566 Z" fill="#eec4bd" opacity="0.55" filter="url(#soft2)"/>
+
+    <!-- 肩与胸衣 -->
+    <path d="M 400 640 C 322 640 286 654 280 686 L 262 800
+             Q 400 830 538 800 L 520 686 C 514 654 478 640 400 640 Z" fill="url(#dress)"/>
+    <!-- 泡泡袖 -->
+    <path d="M 214 700 C 150 690 92 730 88 784 C 84 800 96 804 112 800
+             C 168 786 208 760 224 726 Z" fill="url(#dress)"/>
+    <path d="M 586 700 C 650 690 708 730 712 784 C 716 800 704 804 688 800
+             C 632 786 592 760 576 726 Z" fill="url(#dress)"/>
+    <g fill="none" stroke="url(#lace)" stroke-width="5" opacity="0.9">
+      <path d="M 96 780 Q 120 760 146 778 Q 172 796 198 776"/>
+      <path d="M 704 780 Q 680 760 654 778 Q 628 796 602 776"/>
+    </g>
+    <!-- 领口蕾丝 -->
+    <path d="M 400 632 C 330 632 292 646 284 674 Q 400 704 516 674 C 508 646 470 632 400 632 Z"
+          fill="url(#lace)"/>
+    <g fill="none" stroke="#e5b3c7" stroke-width="2" opacity="0.85">
+      <circle cx="316" cy="674" r="6"/><circle cx="350" cy="684" r="6"/>
+      <circle cx="400" cy="688" r="6"/><circle cx="450" cy="684" r="6"/>
+      <circle cx="484" cy="674" r="6"/>
+    </g>
+    <!-- 系带 -->
+    <g stroke="url(#lace)" stroke-width="3.5" fill="none" opacity="0.95">
+      <path d="M 374 716 L 426 736"/><path d="M 426 716 L 374 736"/>
+      <path d="M 372 752 L 428 772"/><path d="M 428 752 L 372 772"/>
+    </g>
+    <!-- 裙摆 -->
+    <path d="M 400 800 C 250 812 120 780 70 800 L 70 800 L 730 800 L 730 800
+             C 680 780 550 812 400 800 Z" fill="url(#dressDark)"/>
+  </g>
+
+  <!-- ================= 手 ================= -->
+  <g id="arms">
+    <ellipse cx="112" cy="792" rx="40" ry="44" fill="url(#skin)"/>
+    <ellipse cx="688" cy="792" rx="40" ry="44" fill="url(#skin)"/>
+    <g fill="none" stroke="#e6b8b0" stroke-width="2" opacity="0.6">
+      <path d="M 96 770 Q 92 786 98 802"/><path d="M 112 764 Q 110 786 112 806"/>
+      <path d="M 128 770 Q 132 786 126 802"/>
+      <path d="M 672 770 Q 668 786 674 802"/><path d="M 688 764 Q 686 786 688 806"/>
+      <path d="M 704 770 Q 708 786 702 802"/>
+    </g>
+  </g>
+
+  <!-- ================= 脸 ================= -->
+  <g id="face">
+    <path d="M 400 192
+             C 266 192 242 318 250 408
+             C 258 496 330 566 400 566
+             C 470 566 542 496 550 408
+             C 558 318 534 192 400 192 Z" fill="url(#skin)"/>
+    <path d="M 306 462 C 334 522 466 522 494 462 C 486 520 442 556 400 556
+             C 358 556 314 520 306 462 Z" fill="#edc3bc" opacity="0.45" filter="url(#soft)"/>
+    <ellipse cx="312" cy="436" rx="54" ry="32" fill="url(#blush)"/>
+    <ellipse cx="488" cy="436" rx="54" ry="32" fill="url(#blush)"/>
+    <ellipse cx="400" cy="452" rx="6.5" ry="4.5" fill="#e6b7b0" opacity="0.8"/>
+    <path d="M 376 482 Q 400 494 424 482 Q 400 516 376 482 Z" fill="url(#lip)"/>
+    <path d="M 376 482 Q 400 494 424 482" fill="none" stroke="#bf5c71" stroke-width="1.6" opacity="0.65"/>
+    <ellipse cx="400" cy="474" rx="10" ry="5" fill="#fff2f2" opacity="0.25"/>
+  </g>
+
+  <!-- ================= 眼 ================= -->
+  <g id="eyes">
+    <g id="eye-L">
+      <path d="M 270 374 C 286 342 318 328 348 334 C 372 340 388 358 386 378
+               C 382 406 344 426 312 421 C 290 417 272 398 270 374 Z" fill="#fdfcfc"/>
+      <g clip-path="url(#eyeLC)">
+        <circle cx="330" cy="384" r="41" fill="url(#iris)"/>
+        <circle cx="330" cy="392" r="20" fill="#22303d"/>
+        <ellipse cx="314" cy="366" rx="13" ry="10" fill="#ffffff" opacity="0.95"/>
+        <ellipse cx="346" cy="402" rx="6" ry="6" fill="#ffffff" opacity="0.65"/>
+        <path d="M 270 386 C 300 362 350 356 388 380" fill="none" stroke="#4f3c37"
+              stroke-width="9" stroke-linecap="round"/>
+      </g>
+      <path d="M 268 372 C 288 340 320 326 350 332" fill="none" stroke="#4f3c37"
+            stroke-width="7" stroke-linecap="round"/>
+      <path d="M 350 332 C 372 336 384 348 388 362" fill="none" stroke="#4f3c37"
+            stroke-width="4" stroke-linecap="round"/>
+      <path d="M 286 408 C 312 424 348 424 366 408" fill="none" stroke="#8a6f67"
+            stroke-width="1.8" opacity="0.5"/>
+    </g>
+    <g id="eye-R">
+      <path d="M 530 374 C 514 342 482 328 452 334 C 428 340 412 358 414 378
+               C 418 406 456 426 488 421 C 510 417 528 398 530 374 Z" fill="#fdfcfc"/>
+      <g clip-path="url(#eyeRC)">
+        <circle cx="470" cy="384" r="41" fill="url(#iris)"/>
+        <circle cx="470" cy="392" r="20" fill="#22303d"/>
+        <ellipse cx="454" cy="366" rx="13" ry="10" fill="#ffffff" opacity="0.95"/>
+        <ellipse cx="486" cy="402" rx="6" ry="6" fill="#ffffff" opacity="0.65"/>
+        <path d="M 530 386 C 500 362 450 356 412 380" fill="none" stroke="#4f3c37"
+              stroke-width="9" stroke-linecap="round"/>
+      </g>
+      <path d="M 532 372 C 512 340 480 326 450 332" fill="none" stroke="#4f3c37"
+            stroke-width="7" stroke-linecap="round"/>
+      <path d="M 450 332 C 428 336 416 348 412 362" fill="none" stroke="#4f3c37"
+            stroke-width="4" stroke-linecap="round"/>
+      <path d="M 434 408 C 452 424 488 424 514 408" fill="none" stroke="#8a6f67"
+            stroke-width="1.8" opacity="0.5"/>
+    </g>
+    <!-- 眉：淡淡的，压在刘海下沿 -->
+    <path d="M 276 330 Q 322 312 368 326" fill="none" stroke="#c8a67a" stroke-width="5"
+          stroke-linecap="round" opacity="0.85"/>
+    <path d="M 432 326 Q 478 312 524 330" fill="none" stroke="#c8a67a" stroke-width="5"
+          stroke-linecap="round" opacity="0.85"/>
+  </g>
+
+  <!-- ================= 刘海与垂发 ================= -->
+  <g id="hair-front">
+    <path d="M 400 170
+             C 296 170 254 226 250 318
+             Q 268 300 288 316 Q 300 292 320 314 Q 336 288 356 312
+             Q 372 288 400 310 Q 428 288 444 312
+             Q 464 288 480 314 Q 500 292 512 316 Q 532 300 550 318
+             C 546 226 504 170 400 170 Z" fill="url(#hair)"/>
+    <g fill="none" stroke="#fef8ea" stroke-width="3" opacity="0.7">
+      <path d="M 318 210 Q 336 262 328 312"/>
+      <path d="M 400 196 Q 400 258 396 310"/>
+      <path d="M 482 210 Q 464 262 472 312"/>
+    </g>
+
+    <!-- 两侧垂发 -->
+    <path d="M 258 286 C 228 360 224 470 234 570 C 240 636 252 690 266 726
+             C 258 664 262 588 272 512 C 282 440 290 356 296 296 Z" fill="url(#hair)"/>
+    <path d="M 542 286 C 572 360 576 470 566 570 C 560 636 548 690 534 726
+             C 542 664 538 588 528 512 C 518 440 510 356 504 296 Z" fill="url(#hair)"/>
+    <path d="M 266 752 C 260 780 270 798 286 798 C 300 798 306 782 298 762 Z" fill="url(#hair)"/>
+    <path d="M 534 752 C 540 780 530 798 514 798 C 500 798 494 782 502 762 Z" fill="url(#hair)"/>
+
+    <!-- 双丸子 -->
+    <g>
+      <circle cx="148" cy="212" r="106" fill="url(#bunGrad)"/>
+      <g fill="none" stroke="#d5b385" stroke-width="3.5" opacity="0.7">
+        <path d="M 78 178 Q 148 146 218 178"/>
+        <path d="M 66 222 Q 148 184 230 222"/>
+        <path d="M 82 266 Q 148 232 214 266"/>
+      </g>
+      <ellipse cx="118" cy="164" rx="34" ry="22" fill="#fffdf4" opacity="0.7" filter="url(#soft2)"/>
+    </g>
+    <g>
+      <circle cx="652" cy="212" r="106" fill="url(#bunGrad)"/>
+      <g fill="none" stroke="#d5b385" stroke-width="3.5" opacity="0.7">
+        <path d="M 582 178 Q 652 146 722 178"/>
+        <path d="M 570 222 Q 652 184 734 222"/>
+        <path d="M 586 266 Q 652 232 718 266"/>
+      </g>
+      <ellipse cx="622" cy="164" rx="34" ry="22" fill="#fffdf4" opacity="0.7" filter="url(#soft2)"/>
+    </g>
+  </g>
+
+  <!-- ================= 配饰 ================= -->
+  <g id="accessories">
+    <!-- 丸子上的缎带 -->
+    <g>
+      <path d="M 148 116 C 114 88 82 106 92 134 C 102 160 132 150 148 134 Z" fill="url(#lace)"/>
+      <path d="M 148 116 C 182 88 214 106 204 134 C 194 160 164 150 148 134 Z" fill="url(#lace)"/>
+      <circle cx="148" cy="128" r="13" fill="url(#gold)"/>
+    </g>
+    <g>
+      <path d="M 652 116 C 618 88 586 106 596 134 C 606 160 636 150 652 134 Z" fill="url(#lace)"/>
+      <path d="M 652 116 C 686 88 718 106 708 134 C 698 160 668 150 652 134 Z" fill="url(#lace)"/>
+      <circle cx="652" cy="128" r="13" fill="url(#gold)"/>
+    </g>
+
+    <!-- 珍珠发卡 -->
+    <g fill="#fff9fc" stroke="#e6cdd6" stroke-width="1.4">
+      <circle cx="470" cy="266" r="8"/><circle cx="490" cy="256" r="7"/>
+      <circle cx="508" cy="248" r="6"/><circle cx="524" cy="242" r="5"/>
+    </g>
+
+    <!-- 耳环 -->
+    <g>
+      <path d="M 286 540 L 286 570" stroke="url(#gold)" stroke-width="2.6"/>
+      <circle cx="286" cy="580" r="9" fill="#fff9fc" stroke="url(#gold)" stroke-width="1.8"/>
+      <path d="M 514 540 L 514 570" stroke="url(#gold)" stroke-width="2.6"/>
+      <circle cx="514" cy="580" r="9" fill="#fff9fc" stroke="url(#gold)" stroke-width="1.8"/>
+    </g>
+
+    <!-- 颈链与吊坠 -->
+    <path d="M 356 636 Q 400 672 444 636" fill="none" stroke="url(#gold)" stroke-width="5"/>
+    <path d="M 400 664 L 400 680" stroke="url(#gold)" stroke-width="3"/>
+    <path d="M 400 680 C 388 694 388 710 400 718 C 412 710 412 694 400 680 Z" fill="url(#gold)"/>
+    <circle cx="400" cy="698" r="4" fill="#fffdf6" opacity="0.9"/>
+
+    <!-- 胸前胸针 -->
+    <g transform="translate(400,760)">
+      <circle r="18" fill="url(#gold)"/>
+      <circle r="10" fill="#fff6fb"/>
+      <circle r="4.5" fill="url(#gold)"/>
+    </g>
+  </g>
+
+  <!-- 柔光与暗角 -->
+  <rect width="800" height="800" fill="#ffd6e8" opacity="0.045"/>
+  <rect width="800" height="800" fill="url(#bgGlow)" opacity="0.0"/>
+</svg>

@@ -39,7 +39,7 @@ class Gate:
 
     def hear(self, text: str, now: float | None = None) -> bool:
         """他说的这句话里有没有叫她的名字。有就续期。"""
-        now = now or time.monotonic()
+        now = time.monotonic() if now is None else now
         if not self.enabled:
             return True
         if self.wake and self.wake in (text or ""):
@@ -48,7 +48,7 @@ class Gate:
         return now < self.until
 
     def open(self, now: float | None = None) -> bool:
-        now = now or time.monotonic()
+        now = time.monotonic() if now is None else now
         if not self.enabled:
             return True
         return now < self.until
@@ -59,5 +59,5 @@ class Gate:
         return self.open(now)
 
     def remain(self, now: float | None = None) -> float:
-        now = now or time.monotonic()
+        now = time.monotonic() if now is None else now
         return max(0.0, self.until - now)

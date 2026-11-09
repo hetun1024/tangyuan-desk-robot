@@ -7,8 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from face import (BLINK_CLOSED, BLINK_MAX, BLINK_MIN, PRESETS, Blinker,  # noqa: E402
-                  Face, blend, draw_face)
+from face import BLINK_CLOSED, BLINK_MAX, BLINK_MIN, STATES, Blinker, Face  # noqa: E402
 
 
 def intervals(b: Blinker):
@@ -52,40 +51,56 @@ def test_时间跳很久也不会爆():
 
 
 def test_画面能画出来():
-    img = draw_face(120, dict(PRESETS["star"]), 1.0, blink=0.08)
+    f = Face("idle")
+    img = f.render(120, now=0.0, t=0.5, blink=1.0)
     assert img.shape == (120, 120, 3)
 
 
-def test_数字参数会连续变化():
-    a, b = PRESETS["idle"], PRESETS["sad"]
-    mid = blend(a, b, 0.5)
-    assert abs(mid["blush"] - (a["blush"] + b["blush"]) / 2) < 1e-6
+def test_渲染不是全黑():
+    import numpy as np
 
-
-def test_形状在中点切换():
-    a, b = PRESETS["idle"], PRESETS["happy"]
-    assert blend(a, b, 0.3)["shape"] == "round"
-    assert blend(a, b, 0.7)["shape"] == "arc"
-
-
-def test_形状切换时眼睛会缩一下():
-    a, b = PRESETS["idle"], PRESETS["star"]
-    assert blend(a, b, 0.5)["eye_scale"] < 0.6
-
-
-def test_过渡走完会停住():
     f = Face("idle")
-    f.set("happy", 0.0)
-    assert f.current(0.0)["shape"] == "round"
-    end = f.current(10.0)
-    assert end["shape"] == "arc"
-    assert f.dur == 0.0
+    img = f.render(160, now=0.0, t=0.5, blink=1.0)
+    assert float(np.mean(img)) > 5, "立绘没加载上"
 
 
-def test_同一个表情不会重新开始过渡():
-    f = Face("happy")
-    f.set("happy", 5.0)
-    assert f.dur == 0.0
+def test_闭眼和睁眼不一样():
+    import numpy as np
+
+    f = Face("idle")
+    a = f.render(128, now=0.0, t=0.0, blink=1.0)
+    b = f.render(128, now=0.0, t=0.0, blink=0.0)
+    assert float(np.abs(a.astype(int) - b.astype(int)).mean()) > 0.5
+
+
+def test_每种情绪都能渲染():
+    f = Face("idle")
+    for name in STATES:
+        img = f.render(96, now=0.0, t=0.4, blink=1.0)
+        assert img is not None and img.size > 0, name
+
+
+def test_换情绪会记下来():
+    f = Face("idle")
+    f.set("happy", now=0.0)
+    assert f.name == "happy"
+
+
+def test_同一个情绪不会重新触发():
+    f = Face("idle")
+    f.set("happy", now=0.0)
+    f.render(64, now=0.3, t=0.0, blink=1.0)
+    f.set("happy", now=0.4)
+    assert f.name == "happy"
+
+
+def test_说话时嘴会动():
+    import numpy as np
+
+    f = Face("talking")
+    a = f.render(128, now=0.0, t=0.10, blink=1.0)
+    b = f.render(128, now=0.0, t=0.35, blink=1.0)
+    assert float(np.abs(a.astype(int) - b.astype(int)).mean()) > 0.2
 
 
 def main():

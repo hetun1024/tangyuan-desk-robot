@@ -1,0 +1,148 @@
+"""汤圆的身体：一张会呼吸、会眨眼、会说话的立绘。
+
+不是 Live2D，但原理一样 —— **同一套图的多个状态之间做混合**。
+
+    平静   ←基础
+    闭眼   ←眨眼时混进来
+    说话   ←说话时混进来
+    微笑 / 难过 / 哭 / 生气 / 惊讶 / 挥手  ←整体换表情
+
+为什么不切片只换眼睛：这十张是整张生成的，眼睛和嘴没法单独抠出来对齐。
+整张混合反而更稳 —— 构图够齐，混起来看不出来，而且换美术时只要换十张图。
+
+呼吸和微晃是**变换**不是新图：整张轻轻缩放、平移一点，人就活过来了。
+"""
+from __future__ import annotations
+
+import os
+from typing import Dict, Optional
+
+import cv2
+import numpy as np
+
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ART = os.path.join(HERE, "assets", "art_clean")
+
+# 文件名 → 内部名字
+FILES = {
+    "idle": "01_平静",
+    "blink": "02_闭眼",
+    "smile": "03_微笑",
+    "surprised": "04_惊讶",
+    "talk": "05_说话",
+    "sad": "06_难过",
+    "cry": "07_哭",
+    "angry": "08_生气",
+    "wave": "09_挥手",
+}
+
+# 情绪 → 用哪张图
+MOODS = {
+    "idle": "idle", "listening": "idle", "thinking": "idle",
+    "happy": "smile", "love": "smile", "star": "smile",
+    "talking": "idle", "surprised": "surprised",
+    "sad": "sad", "cry": "cry", "angry": "angry",
+    "sleepy": "blink", "question": "surprised",
+    "wave": "wave", "hello": "wave", "bye": "wave",
+}
+
+
+def _bg(w: int, h: int) -> np.ndarray:
+    """深紫背景，中间一团柔光 —— 和立绘的影棚感对得上。"""
+    img = np.zeros((h, w, 3), np.uint8)
+    top, bot = (46, 34, 54), (20, 16, 26)
+    for y in range(h):
+        k = y / h
+        img[y, :] = [int(top[i] + (bot[i] - top[i]) * k) for i in range(3)]
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    d = np.sqrt((xx - w / 2) ** 2 + (yy - h * 0.30) ** 2) / (w * 0.62)
+    glow = (np.clip(1 - d, 0, 1) ** 2 * 26).astype(np.uint8)[..., None]
+    return np.clip(img.astype(np.int16) + glow, 0, 255).astype(np.uint8)
+
+
+class Model:
+    def __init__(self, art_dir: str = ART, size: int = 480):
+        self.size = size
+        self.frames: Dict[str, np.ndarray] = {}
+        for key, name in FILES.items():
+            path = os.path.join(art_dir, name + ".webp")
+            if not os.path.exists(path):
+                path = os.path.join(art_dir, name + ".png")
+            if not os.path.exists(path):
+                continue
+            img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+            if img is None:
+                continue
+            self.frames[key] = self._fit(img)
+        if "idle" not in self.frames:
+            raise FileNotFoundError("找不到立绘：%s" % art_dir)
+        self.bg = _bg(self.size, self.size)
+
+    def _fit(self, img: np.ndarray) -> np.ndarray:
+        """缩放到画布大小，等比缩放、居中。"""
+        h, w = img.shape[:2]
+        s = self.size / max(h, w)
+        nw, nh = int(w * s), int(h * s)
+        img = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+        canvas = np.zeros((self.size, self.size, 4), np.uint8)
+        y0 = (self.size - nh) // 2
+        x0 = (self.size - nw) // 2
+        canvas[y0 : y0 + nh, x0 : x0 + nw] = img
+        return canvas
+
+    # ------------------------------------------------------------ 混合
+    @staticmethod
+    def _mix(a: np.ndarray, b: np.ndarray, k: float) -> np.ndarray:
+        """按 alpha 正确混合两张 RGBA（预乘再混，边缘不会发黑）。"""
+        k = float(np.clip(k, 0.0, 1.0))
+        if k <= 0.001:
+            return a
+        if k >= 0.999:
+            return b
+        pa = a.astype(np.float32)
+        pb = b.astype(np.float32)
+        aa = pa[..., 3:4] / 255.0
+        ab = pb[..., 3:4] / 255.0
+        rgb = pa[..., :3] * aa * (1 - k) + pb[..., :3] * ab * k
+        al = aa * (1 - k) + ab * k
+        out = np.zeros_like(pa)
+        out[..., :3] = np.where(al > 1e-4, rgb / np.maximum(al, 1e-4), 0)
+        out[..., 3] = al[..., 0] * 255
+        return out.astype(np.uint8)
+
+    # ------------------------------------------------------------ 一帧
+    def frame(self, mood: str = "idle", t: float = 0.0,
+              blink: float = 0.0, talk: float = 0.0,
+              fade: Optional[np.ndarray] = None) -> np.ndarray:
+        """mood 是情绪名；blink/talk 是 0..1 的混合权重。"""
+        key = MOODS.get(mood, "idle")
+        base = self.frames.get(key, self.frames["idle"])
+
+        if fade is not None:
+            base = self._mix(fade, base, 0.35)
+
+        if blink > 0.01 and "blink" in self.frames:
+            base = self._mix(base, self.frames["blink"], blink)
+        if talk > 0.01 and "talk" in self.frames:
+            base = self._mix(base, self.frames["talk"], talk)
+
+        # 呼吸：整体极轻微地上下缩放；微晃：左右各两像素
+        br = np.sin(t * 1.05) * 0.006
+        sx = 1.0 + br * 0.4
+        sy = 1.0 + br
+        dx = np.sin(t * 0.37) * 2.0
+        dy = np.sin(t * 1.05 + 1.2) * 1.5
+        h, w = self.size, self.size
+        m = cv2.getRotationMatrix2D((w / 2, h * 0.95), 0, 1.0)
+        m[0, 0], m[0, 2] = sx, (1 - sx) * w / 2 + dx
+        m[1, 1], m[1, 2] = sy, (1 - sy) * h * 0.95 + dy
+        warped = cv2.warpAffine(base, m, (w, h), flags=cv2.INTER_LINEAR,
+                                borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0))
+
+        alpha = (warped[..., 3:4].astype(np.float32) / 255.0)
+        rgb = warped[..., :3].astype(np.float32)
+        out = rgb * alpha + self.bg.astype(np.float32) * (1 - alpha)
+        return out.astype(np.uint8)
+
+    def has(self, mood: str) -> bool:
+        return MOODS.get(mood, "idle") in self.frames

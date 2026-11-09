@@ -38,6 +38,8 @@ from urllib.parse import parse_qs, urlparse
 import cv2
 import numpy as np
 
+from agent import live2d
+
 BG = (10, 9, 12)
 BLUE_TOP = (255, 216, 170)  # BGR #aad8ff
 BLUE_BOT = (250, 140, 125)  # BGR #7d8cfa
@@ -67,291 +69,10 @@ def _p(**kw):
     return base
 
 
-PRESETS = {
-    "idle": _p(),
-    "listening": _p(eye_w=0.213, eye_h=0.28, blush=0.22),
-    "thinking": _p(blush=0.12, prop="dots"),
-    "talking": _p(blush=0.24, mouth="talk"),
-    "happy": _p(shape="arc", mouth="smile", blush=0.55, top=WARM_TOP, bot=WARM_BOT),
-    "love": _p(shape="heart", mouth="small", blush=0.75, top=(190, 190, 255), bot=(190, 120, 240)),
-    "sleepy": _p(shape="arc_down", mouth="line", prop="zzz", blush=0.25, top=GRAY_TOP, bot=GRAY_BOT),
-    "surprised": _p(eye_w=0.213, eye_h=0.28, mouth="o", prop="sweat", blush=0.30),
-    "angry": _p(shape="bar", mouth="dot", blush=0.10, top=(210, 200, 200), bot=(150, 120, 175)),
-    "star": _p(shape="star", mouth="dot", prop="sparkle", blush=0.20,
-               top=(150, 235, 255), bot=(60, 190, 240)),
-    "question": _p(mouth="dot", prop="question", blush=0.20),
-    "coffee": _p(shape="arc", mouth="dot", prop="coffee", blush=0.50),
-    "eating": _p(eye_w=0.213, eye_h=0.28, mouth="chew", prop="food", blush=0.40),
-    "sad": _p(mouth="frown", blush=0.35, top=GRAY_TOP, bot=(180, 150, 200)),
-}
-ORDER = list(PRESETS)
+STATES = list(live2d.MOODS)
+
 CONVERSATION = {"idle", "listening", "thinking", "talking"}
 
-
-# ---------------------------------------------------------------- 基础合成
-def squircle(w, h, n: float = 3.2) -> np.ndarray:
-    w, h = max(2, int(w)), max(2, int(h))
-    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
-    nx = (xx - (w - 1) / 2.0) / ((w - 1) / 2.0)
-    ny = (yy - (h - 1) / 2.0) / ((h - 1) / 2.0)
-    d = np.abs(nx) ** n + np.abs(ny) ** n
-    return np.clip((1.0 - d) * 60.0, 0.0, 1.0)
-
-
-def composite(canvas, x, y, rgb, a):
-    x, y = int(x), int(y)
-    h, w = a.shape
-    H, W = canvas.shape[:2]
-    x0, y0 = max(0, x), max(0, y)
-    x1, y1 = min(W, x + w), min(H, y + h)
-    if x1 <= x0 or y1 <= y0:
-        return
-    pa = a[y0 - y : y1 - y, x0 - x : x1 - x][..., None]
-    prgb = rgb[y0 - y : y1 - y, x0 - x : x1 - x]
-    dst = canvas[y0:y1, x0:x1].astype(np.float32)
-    canvas[y0:y1, x0:x1] = np.clip(dst * (1 - pa) + prgb, 0, 255).astype(np.uint8)
-
-
-def add_glow(canvas, x, y, a, color, strength=0.35):
-    x, y = int(x), int(y)
-    h, w = a.shape
-    pad = int(max(h, w) * 0.9) + 4
-    big = np.zeros((h + pad * 2, w + pad * 2), np.float32)
-    big[pad : pad + h, pad : pad + w] = a
-    big = cv2.GaussianBlur(big, (0, 0), sigmaX=max(2.0, max(h, w) * 0.18))
-    H, W = canvas.shape[:2]
-    x0, y0 = x - pad, y - pad
-    bx0, by0 = max(0, -x0), max(0, -y0)
-    bx1, by1 = min(big.shape[1], W - x0), min(big.shape[0], H - y0)
-    if bx1 <= bx0 or by1 <= by0:
-        return
-    region = canvas[y0 + by0 : y0 + by1, x0 + bx0 : x0 + bx1].astype(np.float32)
-    g = big[by0:by1, bx0:bx1, None] * strength
-    canvas[y0 + by0 : y0 + by1, x0 + bx0 : x0 + bx1] = np.clip(
-        region + np.array(color, np.float32) * g, 0, 255
-    ).astype(np.uint8)
-
-
-def tint(alpha, color):
-    return alpha[..., None] * np.array(color, np.float32)
-
-
-# ------------------------------------------------------------------ 零件
-def eye_patch(w, h, top, bot, squash=1.0):
-    w, h = max(3, int(w)), max(3, int(h))
-    a = squircle(w, h)
-    if squash != 1.0:
-        nh = max(2, int(h * squash))
-        a = cv2.resize(a, (w, nh), interpolation=cv2.INTER_AREA)
-        h = nh
-    t = np.linspace(0.0, 1.0, h, dtype=np.float32)[:, None]
-    rgb = np.zeros((h, w, 3), np.float32)
-    for c in range(3):
-        rgb[:, :, c] = top[c] * (1 - t) + bot[c] * t
-    rgb = rgb * a[..., None]
-
-    yy, xx = np.mgrid[0:h, 0:w]
-    hw, hh = max(1.5, w * 0.19), max(1.5, h * 0.17)
-    d = ((xx - w * 0.34) / hw) ** 2 + ((yy - h * 0.30) / hh) ** 2
-    dot = np.clip((1 - d) * 2.4, 0, 1) * 0.85
-    rgb = np.clip(rgb + dot[..., None] * 255, 0, 255) * a[..., None]
-    return rgb, a
-
-
-def heart_patch(w, h, color=PINK):
-    w, h = max(6, int(w)), max(6, int(h))
-    m = np.zeros((h, w), np.uint8)
-    r = w * 0.26
-    for cx in (w * 0.30, w * 0.70):
-        cv2.circle(m, (int(cx), int(h * 0.34)), int(r), 255, -1)
-    cv2.fillPoly(m, [np.array([[w * .05, h * .36], [w * .95, h * .36], [w * .50, h * .97]],
-                              np.int32)], 255)
-    a = cv2.GaussianBlur(m, (0, 0), sigmaX=max(1.0, w * 0.02)).astype(np.float32) / 255.0
-    return tint(a, color), a
-
-
-def star_patch(w, h, color=GOLD, points=5, inner=0.45):
-    w, h = max(6, int(w)), max(6, int(h))
-    m = np.zeros((h, w), np.uint8)
-    cx, cy, R = w / 2.0, h / 2.0, min(w, h) * 0.48
-    pts = []
-    for i in range(points * 2):
-        ang = -math.pi / 2 + i * math.pi / points
-        r = R if i % 2 == 0 else R * inner
-        pts.append([cx + r * math.cos(ang), cy + r * math.sin(ang)])
-    cv2.fillPoly(m, [np.array(pts, np.int32)], 255)
-    a = cv2.GaussianBlur(m, (0, 0), sigmaX=max(1.0, w * 0.02)).astype(np.float32) / 255.0
-    return tint(a, color), a
-
-
-def text_patch(text, scale, color=WHITE, thick=3):
-    (tw, th), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, scale, thick)
-    m = np.zeros((th + base + 14, tw + 14), np.uint8)
-    cv2.putText(m, text, (7, th + 7), cv2.FONT_HERSHEY_DUPLEX, scale, 255, thick, cv2.LINE_AA)
-    a = cv2.GaussianBlur(m, (0, 0), sigmaX=1.1).astype(np.float32) / 255.0
-    return tint(a, color), a
-
-
-# ------------------------------------------------------------------ 道具
-def draw_prop(img, kind, cx, cy, s, t, alpha=1.0):
-    if not kind or alpha <= 0.01:
-        return
-
-    def put(x, y, rgb, a):
-        composite(img, x, y, rgb * alpha, a * alpha)
-
-    if kind == "zzz":
-        for i in range(3):
-            rgb, a = text_patch("Z", 0.24 + i * 0.10, WHITE, 3)
-            bob = math.sin(t * 1.8 + i) * s * 0.01
-            x, y = int(cx + s * 0.16 + i * s * 0.07), int(cy - s * 0.20 - i * s * 0.09 + bob)
-            add_glow(img, x, y, a, WHITE, 0.12 * alpha)
-            put(x, y, rgb, a)
-
-    elif kind == "sparkle":
-        for i, (dx, dy, k) in enumerate(((0.33, -0.30, 1.0), (0.44, -0.06, 0.55))):
-            tw = 0.55 + 0.45 * math.sin(t * 3.2 + i * 2)
-            rgb, a = star_patch(s * 0.11 * k, s * 0.11 * k, GOLD, points=4, inner=0.30)
-            x, y = int(cx + s * dx), int(cy + s * dy)
-            add_glow(img, x, y, a, GOLD, 0.25 * tw * alpha)
-            put(x, y, rgb * tw, a * tw)
-
-    elif kind == "sweat":
-        bob = math.sin(t * 2.0) * s * 0.008
-        rgb, a = text_patch("!", s / 95.0, BLUE_TOP, 4)
-        x, y = int(cx + s * 0.31), int(cy - s * 0.32 + bob)
-        add_glow(img, x, y, a, BLUE_TOP, 0.14 * alpha)
-        put(x, y, rgb, a)
-
-    elif kind == "question":
-        bob = math.sin(t * 2.2) * s * 0.008
-        rgb, a = text_patch("?", s / 85.0, (210, 195, 255), 4)
-        x, y = int(cx + s * 0.28), int(cy - s * 0.33 + bob)
-        add_glow(img, x, y, a, (210, 195, 255), 0.16 * alpha)
-        put(x, y, rgb, a)
-
-    elif kind == "dots":
-        for i in range(3):
-            k = 0.5 + 0.5 * math.sin(t * 4.0 - i * 0.9)
-            a = squircle(s * 0.030, s * 0.030, 2.0)
-            rgb = tint(a, (180, 190, 230))
-            x, y = int(cx + s * 0.16 + i * s * 0.055), int(cy + s * 0.16)
-            put(x, y, rgb, a * (0.35 + 0.65 * k))
-
-    elif kind == "coffee":
-        w, h = int(s * 0.15), int(s * 0.115)
-        x, y = int(cx - w / 2 - s * 0.06), int(cy + s * 0.17)
-        m = np.zeros((h + 12, w + 12), np.uint8)
-        cv2.rectangle(m, (4, 14), (w - 6, h + 6), 255, -1)
-        cv2.ellipse(m, (int(w * 0.22), 14), (int(w * 0.24), 5), 0, 0, 360, 255, -1)
-        cv2.circle(m, (w + 2, 14 + h // 2), 8, 255, 4)
-        a = cv2.GaussianBlur(m, (0, 0), 1.0).astype(np.float32) / 255.0
-        add_glow(img, x, y, a, WHITE, 0.10 * alpha)
-        put(x, y, tint(a, (230, 228, 240)), a)
-        for i in range(2):
-            sx = x + int(w * (0.34 + 0.32 * i))
-            for k in range(3):
-                yy = y + 4 - k * 7
-                cv2.circle(img, (sx + int(math.sin(t * 2 + k + i) * 2), yy), 2, (110, 110, 130), -1)
-
-    elif kind == "food":
-        a = squircle(s * 0.13, s * 0.075, 2.3)
-        x, y = int(cx + s * 0.20), int(cy + s * 0.21)
-        add_glow(img, x, y, a, (210, 195, 250), 0.12 * alpha)
-        put(x, y, tint(a, (210, 195, 250)), a)
-
-
-# ------------------------------------------------------------------ 画脸
-def draw_face(size, p, t, blink=1.0):
-    img = np.full((size, size, 3), BG, np.uint8)
-
-    ew = size * p["eye_w"] * p["eye_scale"]
-    eh = size * p["eye_h"] * p["eye_scale"]
-    gap = size * p["eye_gap"]
-
-    # 呼吸：整个脸的起伏。没有舵机也能有"在动"的感觉 ——
-    # 幅度很小（0.6% 画布），看久了会觉得它在喘气。
-    breathe = math.sin(t * 0.85) * size * 0.006
-    sway = math.sin(t * 0.31) * size * 0.004
-    cx = int(size) // 2 + int(sway)
-    cy = int(size * p["eye_cy"] + breathe)
-    style = p["shape"]
-    top, bot = p["top"], p["bot"]
-
-    for side in (-1, 1):
-        ex = int(cx + side * gap - ew / 2)
-
-        if style == "round":
-            h = max(2, int(eh * blink))
-            rgb, a = eye_patch(ew, h, top, bot)
-            add_glow(img, ex, cy - h // 2, a, bot, 0.30)
-            composite(img, ex, cy - h // 2, rgb, a)
-
-        elif style in ("arc", "arc_down"):
-            if blink < 0.5:
-                cv2.line(img, (ex + int(ew * 0.12), cy + 4),
-                         (ex + int(ew * 0.88), cy + 4), WHITE, 6, cv2.LINE_AA)
-            elif style == "arc":
-                cv2.ellipse(img, (int(ex + ew / 2), cy + int(eh * 0.12)),
-                            (int(ew / 2), int(eh / 2)), 0, 200, 340, WHITE, 7, cv2.LINE_AA)
-            else:
-                cv2.ellipse(img, (int(ex + ew / 2), cy - int(eh * 0.10)),
-                            (int(ew / 2), int(eh / 2)), 0, 20, 160, WHITE, 6, cv2.LINE_AA)
-
-        elif style == "heart":
-            h2 = max(2.0, eh * 0.95 * blink)
-            rgb, a = heart_patch(ew * 0.95, h2, tuple(bot))
-            add_glow(img, ex, cy - int(h2 / 2), a, bot, 0.40)
-            composite(img, ex, cy - int(h2 / 2), rgb, a)
-
-        elif style == "star":
-            h2 = max(2.0, eh * 0.95 * blink)
-            rgb, a = star_patch(ew * 1.0, h2, GOLD)
-            add_glow(img, ex, cy - int(h2 / 2), a, GOLD, 0.45)
-            composite(img, ex, cy - int(h2 / 2), rgb, a)
-
-        elif style == "bar":
-            h2 = max(2.0, eh * blink)
-            a = squircle(ew * 0.30, h2, 7.0)
-            rgb = tint(a, top)
-            add_glow(img, ex + int(ew * 0.35), cy - int(h2 / 2), a, bot, 0.28)
-            composite(img, ex + int(ew * 0.35), cy - int(h2 / 2), rgb, a)
-
-    if p["blush"] > 0:
-        bw, bh = int(size * 0.08), int(size * 0.045)
-        a = squircle(bw, bh, 2.0)
-        rgb = tint(a, BLUSH_C)
-        for side in (-1, 1):
-            x = int(cx + side * gap * 1.45 - bw // 2)
-            y = cy + int(size * 0.075)
-            composite(img, x, y, rgb, a * p["blush"] * 0.5)
-
-    my = cy + int(size * 0.125)
-    m = p["mouth"]
-    if m == "dot":
-        cv2.ellipse(img, (cx, my + 12), (int(size * .026), int(size * .017)), 0, 0, 360, MUTED, -1, cv2.LINE_AA)
-    elif m == "smile":
-        cv2.ellipse(img, (cx, my + 2), (int(size * .055), int(size * .042)), 0, 8, 172, WHITE, 5, cv2.LINE_AA)
-    elif m == "frown":
-        cv2.ellipse(img, (cx, my + 14), (int(size * .050), int(size * .034)), 0, 188, 352, WHITE, 5, cv2.LINE_AA)
-    elif m == "line":
-        cv2.line(img, (cx - int(size * .028), my + 4), (cx + int(size * .028), my + 4), WHITE, 4, cv2.LINE_AA)
-    elif m == "o":
-        cv2.circle(img, (cx, my + 4), int(size * .025), WHITE, 4, cv2.LINE_AA)
-    elif m == "small":
-        cv2.ellipse(img, (cx, my + 2), (int(size * .026), int(size * .017)), 0, 0, 360, PINK, -1, cv2.LINE_AA)
-    elif m == "talk":
-        h = int(size * (0.010 + 0.030 * (0.5 + 0.5 * math.sin(t * 13.0))))
-        cv2.ellipse(img, (cx, my + 6), (int(size * .031), h), 0, 0, 360, WHITE, -1, cv2.LINE_AA)
-    elif m == "chew":
-        h = int(size * (0.015 + 0.010 * math.sin(t * 9.0)))
-        cv2.ellipse(img, (cx, my + 6), (int(size * .038), h), 0, 0, 360, WHITE, -1, cv2.LINE_AA)
-
-    draw_prop(img, p["prop"], cx, cy, size, t, p["prop_a"])
-    return img
-
-
-# ------------------------------------------------------------------ 过渡
 def ease(k: float) -> float:
     k = max(0.0, min(1.0, k))
     return k * k * (3 - 2 * k)
@@ -383,38 +104,53 @@ def blend(a, b, k):
 
 
 class Face:
-    """当前表情 + 过渡状态。"""
+    """当前表情 + 过渡。
+
+    旧的 14 套参数化抽象表情已经删掉了 —— 现在她的脸来自立绘，
+    情绪只是"换哪张图"，过渡交给 Model 里的混合。
+    """
 
     def __init__(self, name: str = "idle"):
-        self.name = name if name in PRESETS else "idle"
-        self.frm = dict(PRESETS[self.name])
-        self.to = dict(PRESETS[self.name])
+        self.model = live2d.Model()
+        self.name = name if name in live2d.MOODS else "idle"
+        self.prev = None      # 上一张图，用来做淡入
         self.t0 = 0.0
         self.dur = 0.0
         self._was_conv = self.name in CONVERSATION
 
     def set(self, name: str, now: float):
-        if name not in PRESETS or name == self.name:
+        if name not in live2d.MOODS or name == self.name:
             return
-        self.frm = dict(self.current(now))
+        self.prev = self.model.frames.get(live2d.MOODS.get(self.name, "idle"))
         self.name = name
-        self.to = dict(PRESETS[name])
         quick = (name in CONVERSATION) and self._was_conv
         self.dur = FAST if quick else SLOW
         self._was_conv = name in CONVERSATION
         self.t0 = now
 
     def current(self, now: float):
+        """返回 {当前状态, 过渡进度}。"""
         if self.dur <= 0:
-            return self.to
+            return {"mood": self.name, "k": 1.0}
         k = (now - self.t0) / self.dur
         if k >= 1.0:
             self.dur = 0.0
-            return self.to
-        return blend(self.frm, self.to, ease(k))
+            return {"mood": self.name, "k": 1.0}
+        return {"mood": self.name, "k": ease(min(1.0, k))}
 
     def render(self, size: int, now: float, t: float, blink: float):
-        return draw_face(size, self.current(now), t, blink)
+        cur = self.current(now)
+        talk = 0.0
+        if self.name == "talking":
+            talk = 0.35 + 0.65 * abs(math.sin(t * 7.0))
+        b = 0.0 if blink >= 0.5 else 1.0
+        if blink > 0.1 and blink < 0.9:
+            b = 1.0 - blink
+        img = self.model.frame(cur["mood"], t=t, blink=b, talk=talk,
+                               fade=self.prev)
+        if img.shape[0] != size:
+            img = cv2.resize(img, (size, size), interpolation=cv2.INTER_AREA)
+        return img
 
 
 # ------------------------------------------------------------------ 眨眼
@@ -480,7 +216,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--emotion", default=None)
     ap.add_argument("--shot", default=None)
-    ap.add_argument("--size", type=int, default=512)
+    ap.add_argument("--size", type=int, default=640)
     ap.add_argument("--fullscreen", action="store_true")
     args = ap.parse_args()
 
@@ -490,7 +226,7 @@ def main() -> int:
         rows = (len(ORDER) + cols - 1) // cols
         sheet = np.full((rows * tile, cols * tile, 3), 12, np.uint8)
         for i, name in enumerate(ORDER):
-            im = draw_face(tile, dict(PRESETS[name]), 0.9)
+            im = st.face.model.frame(name, t=0.9)
             cv2.putText(im, name, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                         (110, 110, 120), 1, cv2.LINE_AA)
             r, c = divmod(i, cols)
