@@ -81,7 +81,7 @@ def _say_piper(text: str, key: str, wpm: int = 175) -> bool:
         return False
 
 # 在线音色挂一次就别每次都试了：每句都要等一两秒超时，还会刷屏。
-_edge_down = False
+_edge_down_until = 0.0   # 冷却到什么时候（秒），不是"永久放弃"
 _warned = False
 
 
@@ -169,14 +169,16 @@ def speak(
             return
         voice = LOCAL_FALLBACK  # 失败就退回系统音色
 
-    global _edge_down, _warned
+    global _edge_down_until, _warned
+    import time as _time
 
-    if tts_edge.is_edge_voice(voice or "") and not _edge_down:
+    edge_ok = _time.time() >= _edge_down_until
+    if tts_edge.is_edge_voice(voice or "") and edge_ok:
         try:
             tts_edge.speak(text, voice, wpm, pitch)
             return
         except Exception as e:  # noqa: BLE001
-            _edge_down = True
+            _edge_down_until = _time.time() + 60  # 一分钟后重试
             if not _warned:
                 _warned = True
                 print(
@@ -185,6 +187,10 @@ def speak(
                     "管理声音 → 中文，下载「美佳」的增强/优质版本。" % str(e)[:60],
                     file=sys.stderr,
                 )
+            # 在线挂了先试离线神经语音，最后才退回系统机械音
+            for key in piper_voices():
+                if _say_piper(text, key.split(":", 1)[1], wpm):
+                    return
             _say_local(text, LOCAL_FALLBACK, wpm)
             return
 

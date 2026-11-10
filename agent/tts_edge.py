@@ -67,9 +67,19 @@ def synth(
     kwargs = {"rate": _pct(rate_wpm)}
     if pitch:
         kwargs["pitch"] = "%+dHz" % int(pitch)
-    communicate = edge_tts.Communicate(text[:600], voice, **kwargs)
-    asyncio.run(communicate.save(path))
-    return path
+    last = None
+    for attempt in range(2):          # 网络是抽的，失败一次再试一次
+        try:
+            communicate = edge_tts.Communicate(text[:600], voice, **kwargs)
+            asyncio.run(communicate.save(path))
+            return path
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if attempt == 0:
+                import time as _t
+
+                _t.sleep(0.4)
+    raise last
 
 
 def speak(text: str, voice: str, rate_wpm: int = 175, pitch: int = 0) -> None:
