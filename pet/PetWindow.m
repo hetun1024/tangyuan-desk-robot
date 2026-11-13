@@ -15,6 +15,8 @@ static NSString *const kMoodFile = @".tangyuan_mood";
 @property (nonatomic, strong) NSImage *baseImg;
 @property (nonatomic, strong) NSImage *eyeImg;
 @property (nonatomic, strong) NSImage *mouthImg;
+@property (nonatomic, strong) NSImage *fadeFrom;     // 上一张图，用来做短淡入
+@property (nonatomic) double fadeT;
 @property (nonatomic) double sx, sy, dx, dy, rot;   // 呼吸/微晃/倾斜
 @end
 
@@ -33,6 +35,10 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     CGContextScaleCTM(ctx, self.sx, self.sy);
     CGContextTranslateCTM(ctx, -anchor.x, -anchor.y);
 
+    if (self.fadeFrom && self.fadeT < 1.0) {
+        [self.fadeFrom drawInRect:self.bounds fromRect:NSZeroRect
+                        operation:NSCompositingOperationSourceOver fraction:(1.0 - self.fadeT)];
+    }
     [self.baseImg drawInRect:self.bounds];
     [self.eyeImg drawInRect:self.bounds];
     [self.mouthImg drawInRect:self.bounds];
@@ -337,7 +343,7 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     }
     if (self.idleKind != 0) {
         double dur = 1.8;
-        if (self.idleKind == 2) dur = 2.4;      // 挥手
+        if (self.idleKind == 2) dur = 5.0;      // 挥手：跟视频一样长
         if (self.idleKind == 7) dur = 2.2;      // 打哈欠
         if (self.idleKind == 6) dur = 2.6;      // 挪步
         double k = (t - self.idleStart) / dur;
@@ -378,7 +384,7 @@ static NSString *const kMoodFile = @".tangyuan_mood";
 
     // 屏幕上用哪张图：外面指定的情绪优先，其次可能是待机小动作里的"挥手"
     NSString *want = self.mood;
-    if (self.idleKind == 2 && (t - self.idleStart) / 2.4 < 0.75) {
+    if (self.idleKind == 2) {
         want = @"wave";
     } else if (self.idleKind == 7 && (t - self.idleStart) / 2.2 < 0.6) {
         want = @"blink";                              // 打哈欠：闭眼 + 拔高
@@ -415,8 +421,22 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     // 有逐帧动画就用动画，这时**不要**再叠呼吸和晃动，否则会双重运动
     NSArray<NSImage *> *anim = [self animFor:self.displayMood];
     if (anim.count > 1) {
-        NSUInteger idx = (NSUInteger)(t * 20.0) % anim.count;
-        self.view.baseImg = anim[idx];
+        // 挥手播一遍就停在最后一帧；其它动作循环
+        NSUInteger idx;
+        if (self.idleKind == 2) {
+            double e = t - self.idleStart;
+            idx = (NSUInteger)(e * 20.0);
+            if (idx >= anim.count) idx = anim.count - 1;
+        } else {
+            idx = (NSUInteger)(t * 20.0) % anim.count;
+        }
+        NSImage *f = anim[idx];
+        if (f != self.view.baseImg) {
+            self.view.fadeFrom = self.view.baseImg;
+            self.view.fadeT = 0.0;
+        }
+        self.view.baseImg = f;
+        self.view.fadeFrom = (self.view.fadeT < 1.0) ? self.view.fadeFrom : nil;
         self.view.eyeImg = nil;
         self.view.mouthImg = nil;
         self.view.sx = 1.0; self.view.sy = 1.0;
@@ -431,7 +451,16 @@ static NSString *const kMoodFile = @".tangyuan_mood";
         self.view.rot += sin(t * 6.5) * 0.35;
     }
 
-    self.view.baseImg = self.bases[self.displayMood] ?: self.bases[@"idle"];
+    NSImage *newBase = self.bases[self.displayMood] ?: self.bases[@"idle"];
+    if (newBase != self.view.baseImg) {
+        self.view.fadeFrom = self.view.baseImg;
+        self.view.fadeT = 0.0;
+    }
+    self.view.baseImg = newBase;
+    if (self.view.fadeFrom) {
+        self.view.fadeT = MIN(1.0, self.view.fadeT + (1.0 / 30.0) / 0.12);
+        if (self.view.fadeT >= 1.0) self.view.fadeFrom = nil;
+    }
     self.view.eyeImg = eyeImg;
     self.view.mouthImg = mouthImg;
     [self.view setNeedsDisplay:YES];
