@@ -1,0 +1,232 @@
+// 汤圆的桌面身体：透明、无边框、永远在顶层。
+//
+// 为什么不是 Python/cv2：cv2 的窗口不能透明，浏览器也不行。
+// 只有原生 NSWindow 能让窗口背景真正透明，立绘才能"浮"在桌面上。
+
+#import <Cocoa/Cocoa.h>
+#import <sys/file.h>
+#import <fcntl.h>
+#import <unistd.h>
+
+static NSString *const kMoodFile = @".tangyuan_mood";
+
+// ------------------------------------------------------------------ 视图
+@interface PetView : NSView
+@property (nonatomic, strong) NSImage *baseImg;
+@property (nonatomic, strong) NSImage *eyeImg;
+@property (nonatomic, strong) NSImage *mouthImg;
+@end
+
+@implementation PetView
+- (BOOL)isOpaque { return NO; }
+- (void)drawRect:(NSRect)dirtyRect {
+    [[NSColor clearColor] set];
+    NSRectFillUsingOperation(dirtyRect, NSCompositingOperationCopy);
+    [self.baseImg drawInRect:self.bounds];
+    [self.eyeImg drawInRect:self.bounds];
+    [self.mouthImg drawInRect:self.bounds];
+}
+@end
+
+// ------------------------------------------------------------- 可拖拽窗口
+@interface DragWindow : NSWindow
+@property (nonatomic) NSPoint grabOffset;
+@end
+
+@implementation DragWindow
+- (BOOL)canBecomeKeyWindow { return YES; }
+- (void)mouseDown:(NSEvent *)e {
+    self.grabOffset = [NSEvent mouseLocation];
+    NSPoint origin = self.frame.origin;
+    self.grabOffset = NSMakePoint(self.grabOffset.x - origin.x,
+                                  self.grabOffset.y - origin.y);
+}
+- (void)mouseDragged:(NSEvent *)e {
+    NSPoint cur = [NSEvent mouseLocation];
+    [self setFrameOrigin:NSMakePoint(cur.x - self.grabOffset.x,
+                                     cur.y - self.grabOffset.y)];
+}
+@end
+
+// ------------------------------------------------------------------ 主体
+@interface PetApp : NSObject <NSApplicationDelegate>
+@property (nonatomic, strong) DragWindow *window;
+@property (nonatomic, strong) PetView *view;
+@property (nonatomic, strong) NSStatusItem *statusItem;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSImage *> *bases;
+@property (nonatomic, strong) NSMutableArray<NSImage *> *eyes;
+@property (nonatomic, strong) NSMutableArray<NSImage *> *mouths;
+@property (nonatomic, copy) NSString *mood;
+@property (nonatomic) NSTimeInterval blinkStart;
+@property (nonatomic) NSTimeInterval blinkLen;
+@property (nonatomic) NSTimeInterval nextBlink;
+@end
+
+@implementation PetApp
+
+- (NSURL *)assetDir {
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *home = [@"~/Downloads/robot-brain/assets/pet" stringByExpandingTildeInPath];
+    if ([fm fileExistsAtPath:home]) return [NSURL fileURLWithPath:home];
+    NSString *res = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"pet"];
+    if ([fm fileExistsAtPath:res]) return [NSURL fileURLWithPath:res];
+    return nil;
+}
+
+- (void)applicationDidFinishLaunching:(NSNotification *)note {
+    [self loadAssets];
+    [self makeWindow];
+    [self makeMenu];
+    self.nextBlink = [NSDate timeIntervalSinceReferenceDate] + 1.5;
+    [NSTimer scheduledTimerWithTimeInterval:1.0 / 30.0 target:self
+                                   selector:@selector(tick:) userInfo:nil repeats:YES];
+    [NSTimer scheduledTimerWithTimeInterval:0.25 target:self
+                                   selector:@selector(pollMood:) userInfo:nil repeats:YES];
+}
+
+- (void)loadAssets {
+    NSURL *dir = [self assetDir];
+    if (!dir) {
+        NSLog(@"找不到 assets/pet，先跑 python3 build_pet.py");
+        [NSApp terminate:nil];
+        return;
+    }
+    self.bases = [NSMutableDictionary dictionary];
+    for (NSString *n in @[@"idle", @"blink", @"smile", @"surprised", @"talk",
+                          @"sad", @"cry", @"angry", @"wave"]) {
+        NSURL *u = [dir URLByAppendingPathComponent:
+                    [NSString stringWithFormat:@"base_%@.png", n]];
+        NSImage *img = [[NSImage alloc] initWithContentsOfURL:u];
+        if (img) self.bases[n] = img;
+    }
+    self.eyes = [NSMutableArray array];
+    for (int i = 0; i < 12; i++) {
+        NSURL *u = [dir URLByAppendingPathComponent:
+                    [NSString stringWithFormat:@"eyes_%02d.png", i]];
+        NSImage *img = [[NSImage alloc] initWithContentsOfURL:u];
+        if (img) [self.eyes addObject:img];
+    }
+    self.mouths = [NSMutableArray array];
+    for (int i = 0; i < 8; i++) {
+        NSURL *u = [dir URLByAppendingPathComponent:
+                    [NSString stringWithFormat:@"mouth_%02d.png", i]];
+        NSImage *img = [[NSImage alloc] initWithContentsOfURL:u];
+        if (img) [self.mouths addObject:img];
+    }
+    NSLog(@"载入 %lu 个状态、%lu 个眼睛、%lu 个嘴",
+          (unsigned long)self.bases.count,
+          (unsigned long)self.eyes.count,
+          (unsigned long)self.mouths.count);
+    self.mood = @"idle";
+}
+
+- (void)makeWindow {
+    NSSize size = NSMakeSize(230, 256);   // 裁过之后立绘是 623x693，按比例縮
+    NSRect vis = NSScreen.mainScreen.visibleFrame;
+    NSRect rect = NSMakeRect(NSMaxX(vis) - size.width - 40,
+                             NSMinY(vis) + 40,
+                             size.width, size.height);
+
+    self.window = [[DragWindow alloc] initWithContentRect:rect
+                                                styleMask:NSWindowStyleMaskBorderless
+                                                  backing:NSBackingStoreBuffered
+                                                    defer:NO];
+    self.window.opaque = NO;
+    self.window.backgroundColor = [NSColor clearColor];
+    self.window.hasShadow = NO;
+    self.window.level = NSFloatingWindowLevel;
+    self.window.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+                                     NSWindowCollectionBehaviorStationary |
+                                     NSWindowCollectionBehaviorIgnoresCycle;
+
+    self.view = [[PetView alloc] initWithFrame:NSMakeRect(0, 0, size.width, size.height)];
+    self.window.contentView = self.view;
+    [self.window makeKeyAndOrderFront:nil];
+}
+
+- (void)makeMenu {
+    self.statusItem = [[NSStatusBar systemStatusBar]
+                       statusItemWithLength:NSVariableStatusItemLength];
+    self.statusItem.button.title = @"汤圆";
+
+    NSMenu *menu = [[NSMenu alloc] init];
+    [menu addItemWithTitle:@"回到右下角" action:@selector(resetPos) keyEquivalent:@"r"];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItemWithTitle:@"退出" action:@selector(quitNow) keyEquivalent:@"q"];
+    for (NSMenuItem *it in menu.itemArray) it.target = self;
+    self.statusItem.menu = menu;
+}
+
+- (void)resetPos {
+    NSRect vis = NSScreen.mainScreen.visibleFrame;
+    [self.window setFrameOrigin:NSMakePoint(NSMaxX(vis) - self.window.frame.size.width - 40,
+                                            NSMinY(vis) + 40)];
+}
+
+- (void)quitNow { [NSApp terminate:nil]; }
+
+- (void)tick:(NSTimer *)timer {
+    NSTimeInterval t = [NSDate timeIntervalSinceReferenceDate];
+
+    NSImage *eyeImg = nil;
+    if (t >= self.nextBlink && self.blinkStart == 0) {
+        self.blinkStart = t;
+        self.blinkLen = 0.13 + (double)arc4random_uniform(60) / 1000.0;
+    }
+    if (self.blinkStart > 0) {
+        double k = (t - self.blinkStart) / self.blinkLen;
+        if (k >= 1.0) {
+            self.blinkStart = 0;
+            self.nextBlink = t + 1.6 + (double)arc4random_uniform(1800) / 1000.0;
+        } else {
+            double closed = k < 0.4 ? k / 0.4 : (1.0 - (k - 0.4) / 0.6);
+            NSInteger idx = (NSInteger)(closed * 11.0);
+            if (idx < 0) idx = 0;
+            if (idx < (NSInteger)self.eyes.count) eyeImg = self.eyes[idx];
+        }
+    }
+
+    NSImage *mouthImg = nil;
+    if ([self.mood isEqualToString:@"talking"] && self.mouths.count > 0) {
+        double v = (sin(t * 7.0) + 1.0) / 2.0;
+        NSInteger idx = (NSInteger)(v * (self.mouths.count - 1));
+        if (idx < 0) idx = 0;
+        if (idx >= (NSInteger)self.mouths.count) idx = self.mouths.count - 1;
+        mouthImg = self.mouths[idx];
+    }
+
+    self.view.baseImg = self.bases[self.mood] ?: self.bases[@"idle"];
+    self.view.eyeImg = eyeImg;
+    self.view.mouthImg = mouthImg;
+    [self.view setNeedsDisplay:YES];
+}
+
+- (void)pollMood:(NSTimer *)timer {
+    NSString *path = [kMoodFile stringByExpandingTildeInPath];
+    NSString *s = [NSString stringWithContentsOfFile:path
+                                            encoding:NSUTF8StringEncoding
+                                               error:NULL];
+    if (!s) return;
+    s = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (s.length && ![s isEqualToString:self.mood] && self.bases[s]) {
+        self.mood = s;
+    }
+}
+
+@end
+
+int main(int argc, const char *argv[]) {
+    // 单例：已经有一个在跑就安静退出，不然桌面上会出现两个她
+    int lockFd = open("/tmp/.tangyuan_pet.lock", O_CREAT | O_RDWR, 0644);
+    if (lockFd >= 0 && flock(lockFd, LOCK_EX | LOCK_NB) != 0) {
+        return 0;
+    }
+    @autoreleasepool {
+        NSApplication *app = [NSApplication sharedApplication];
+        PetApp *delegate = [[PetApp alloc] init];
+        app.delegate = delegate;
+        [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        [app run];
+    }
+    return 0;
+}

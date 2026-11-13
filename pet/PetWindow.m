@@ -15,6 +15,7 @@ static NSString *const kMoodFile = @".tangyuan_mood";
 @property (nonatomic, strong) NSImage *baseImg;
 @property (nonatomic, strong) NSImage *eyeImg;
 @property (nonatomic, strong) NSImage *mouthImg;
+@property (nonatomic) double sx, sy, dx, dy, rot;   // 呼吸/微晃/倾斜
 @end
 
 @implementation PetView
@@ -22,9 +23,20 @@ static NSString *const kMoodFile = @".tangyuan_mood";
 - (void)drawRect:(NSRect)dirtyRect {
     [[NSColor clearColor] set];
     NSRectFillUsingOperation(dirtyRect, NSCompositingOperationCopy);
+
+    // 以"脚底中点"为支点做变换：人站着晃，脚不能离地
+    CGContextRef ctx = [[NSGraphicsContext currentContext] CGContext];
+    CGContextSaveGState(ctx);
+    NSPoint anchor = NSMakePoint(NSMidX(self.bounds), NSMinY(self.bounds));
+    CGContextTranslateCTM(ctx, anchor.x + self.dx, anchor.y + self.dy);
+    CGContextRotateCTM(ctx, self.rot * M_PI / 180.0);
+    CGContextScaleCTM(ctx, self.sx, self.sy);
+    CGContextTranslateCTM(ctx, -anchor.x, -anchor.y);
+
     [self.baseImg drawInRect:self.bounds];
     [self.eyeImg drawInRect:self.bounds];
     [self.mouthImg drawInRect:self.bounds];
+    CGContextRestoreGState(ctx);
 }
 @end
 
@@ -60,6 +72,11 @@ static NSString *const kMoodFile = @".tangyuan_mood";
 @property (nonatomic) NSTimeInterval blinkStart;
 @property (nonatomic) NSTimeInterval blinkLen;
 @property (nonatomic) NSTimeInterval nextBlink;
+@property (nonatomic) NSTimeInterval nextIdle;      // 下一个待机小动作
+@property (nonatomic) NSTimeInterval idleStart;     // 当前小动作开始时间
+@property (nonatomic) int idleKind;                 // 0 没有 / 1 歪头 / 2 挥手 / 3 伸懒腰
+@property (nonatomic, copy) NSString *displayMood;  // 屏幕上实际用哪张图
+@property (nonatomic) BOOL clickThrough;
 @end
 
 @implementation PetApp
@@ -78,6 +95,9 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     [self makeWindow];
     [self makeMenu];
     self.nextBlink = [NSDate timeIntervalSinceReferenceDate] + 1.5;
+    self.nextIdle = [NSDate timeIntervalSinceReferenceDate] + 8.0;
+    self.displayMood = @"idle";
+    self.view.sx = 1.0; self.view.sy = 1.0;
     [NSTimer scheduledTimerWithTimeInterval:1.0 / 30.0 target:self
                                    selector:@selector(tick:) userInfo:nil repeats:YES];
     [NSTimer scheduledTimerWithTimeInterval:0.25 target:self
@@ -150,6 +170,7 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     self.statusItem.button.title = @"汤圆";
 
     NSMenu *menu = [[NSMenu alloc] init];
+    [menu addItemWithTitle:@"点击穿透（鼠标穿过她）" action:@selector(toggleThrough) keyEquivalent:@"p"];
     [menu addItemWithTitle:@"回到右下角" action:@selector(resetPos) keyEquivalent:@"r"];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItemWithTitle:@"退出" action:@selector(quitNow) keyEquivalent:@"q"];
@@ -163,10 +184,57 @@ static NSString *const kMoodFile = @".tangyuan_mood";
                                             NSMinY(vis) + 40)];
 }
 
+- (void)toggleThrough {
+    self.clickThrough = !self.clickThrough;
+    self.window.ignoresMouseEvents = self.clickThrough;
+    NSMenuItem *it = self.statusItem.menu.itemArray.firstObject;
+    it.state = self.clickThrough ? NSControlStateValueOn : NSControlStateValueOff;
+    self.statusItem.button.title = self.clickThrough ? @"汤圆·穿透" : @"汤圆";
+}
+
 - (void)quitNow { [NSApp terminate:nil]; }
 
 - (void)tick:(NSTimer *)timer {
     NSTimeInterval t = [NSDate timeIntervalSinceReferenceDate];
+
+    // ---- 呼吸和微晃：都是对同一张图做变换，不是换图，所以不会闪
+    double breath = sin(t * 0.85) * 0.0045;          // 起伏不到半个百分点
+    self.view.sy = 1.0 + breath;
+    self.view.sx = 1.0 - breath * 0.35;
+    self.view.dx = sin(t * 0.21) * 1.6;
+    self.view.dy = sin(t * 0.33 + 1.1) * 0.7;
+    self.view.rot = sin(t * 0.17) * 0.3;
+
+    // ---- 待机小动作：每隔十几秒来一下，让她不像个雕像
+    if (self.idleKind == 0 && t >= self.nextIdle &&
+        ([self.mood isEqualToString:@"idle"] || [self.mood isEqualToString:@"listening"])) {
+        self.idleKind = 1 + arc4random_uniform(3);
+        self.idleStart = t;
+    }
+    if (self.idleKind != 0) {
+        double dur = (self.idleKind == 2) ? 2.4 : 1.8;
+        double k = (t - self.idleStart) / dur;
+        if (k >= 1.0) {
+            self.idleKind = 0;
+            self.nextIdle = t + 9.0 + (double)arc4random_uniform(14000) / 1000.0;
+        } else {
+            double env = sin(k * M_PI);              // 0→1→0，起落都柔和
+            if (self.idleKind == 1) {                // 歪头
+                self.view.rot += env * 1.6;
+                self.view.dx += env * 2.0;
+            } else if (self.idleKind == 3) {         // 伸个懒腰：轻轻拔高
+                self.view.sy += env * 0.012;
+                self.view.dy += env * 2.5;
+            }
+        }
+    }
+
+    // 屏幕上用哪张图：外面指定的情绪优先，其次可能是待机小动作里的"挥手"
+    NSString *want = self.mood;
+    if (self.idleKind == 2 && (t - self.idleStart) / 2.4 < 0.75) {
+        want = @"wave";
+    }
+    self.displayMood = self.bases[want] ? want : @"idle";
 
     NSImage *eyeImg = nil;
     if (t >= self.nextBlink && self.blinkStart == 0) {
@@ -195,7 +263,7 @@ static NSString *const kMoodFile = @".tangyuan_mood";
         mouthImg = self.mouths[idx];
     }
 
-    self.view.baseImg = self.bases[self.mood] ?: self.bases[@"idle"];
+    self.view.baseImg = self.bases[self.displayMood] ?: self.bases[@"idle"];
     self.view.eyeImg = eyeImg;
     self.view.mouthImg = mouthImg;
     [self.view setNeedsDisplay:YES];
@@ -210,6 +278,8 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     s = [s stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (s.length && ![s isEqualToString:self.mood] && self.bases[s]) {
         self.mood = s;
+        self.idleKind = 0;
+        self.nextIdle = [NSDate timeIntervalSinceReferenceDate] + 12.0;
     }
 }
 
