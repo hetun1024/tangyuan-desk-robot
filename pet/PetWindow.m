@@ -77,6 +77,8 @@ static NSString *const kMoodFile = @".tangyuan_mood";
 @property (nonatomic) int idleKind;                 // 0 没有 / 1 歪头 / 2 挥手 / 3 伸懒腰
 @property (nonatomic, copy) NSString *displayMood;  // 屏幕上实际用哪张图
 @property (nonatomic) BOOL clickThrough;
+@property (nonatomic, strong) NSMenuItem *talkItem;
+@property (nonatomic) BOOL talking;
 @end
 
 @implementation PetApp
@@ -102,6 +104,8 @@ static NSString *const kMoodFile = @".tangyuan_mood";
                                    selector:@selector(tick:) userInfo:nil repeats:YES];
     [NSTimer scheduledTimerWithTimeInterval:0.25 target:self
                                    selector:@selector(pollMood:) userInfo:nil repeats:YES];
+    [NSTimer scheduledTimerWithTimeInterval:1.0 target:self
+                                   selector:@selector(updateBrainStatus:) userInfo:nil repeats:YES];
 }
 
 - (void)loadAssets {
@@ -170,6 +174,10 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     self.statusItem.button.title = @"汤圆";
 
     NSMenu *menu = [[NSMenu alloc] init];
+    NSMenuItem *talk = [menu addItemWithTitle:@"对话模式：检测中…"
+                                       action:@selector(toggleTalk) keyEquivalent:@"t"];
+    talk.target = self;
+    self.talkItem = talk;
     [menu addItemWithTitle:@"点击穿透（鼠标穿过她）" action:@selector(toggleThrough) keyEquivalent:@"p"];
     [menu addItemWithTitle:@"回到右下角" action:@selector(resetPos) keyEquivalent:@"r"];
     [menu addItem:[NSMenuItem separatorItem]];
@@ -182,6 +190,53 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     NSRect vis = NSScreen.mainScreen.visibleFrame;
     [self.window setFrameOrigin:NSMakePoint(NSMaxX(vis) - self.window.frame.size.width - 40,
                                             NSMinY(vis) + 40)];
+}
+
+// ------------------------------------------------------------ 对话模式
+- (BOOL)brainAlive {
+    NSTask *t = [[NSTask alloc] init];
+    t.launchPath = @"/usr/bin/pgrep";
+    t.arguments = @[@"-f", @"main.py --talk"];
+    t.standardOutput = [NSPipe pipe];
+    t.standardError = [NSPipe pipe];
+    @try {
+        [t launch];
+        [t waitUntilExit];
+    } @catch (NSException *e) {
+        return NO;
+    }
+    return t.terminationStatus == 0;
+}
+
+- (void)updateBrainStatus:(NSTimer *)timer {
+    BOOL alive = [self brainAlive];
+    if (alive == self.talking) return;
+    self.talking = alive;
+    self.talkItem.state = alive ? NSControlStateValueOn : NSControlStateValueOff;
+    self.talkItem.title = alive ? @"对话模式：已开启（点一下关掉）"
+                                : @"对话模式：已关闭（点一下开启）";
+}
+
+- (void)toggleTalk {
+    NSString *script = [@"~/Library/Application Support/tangyuan/start.sh"
+                        stringByExpandingTildeInPath];
+    if ([self brainAlive]) {
+        NSTask *t = [[NSTask alloc] init];
+        t.launchPath = @"/usr/bin/pkill";
+        t.arguments = @[@"-f", @"main.py --talk"];
+        @try { [t launch]; } @catch (NSException *e) {}
+        self.talking = NO;
+        self.talkItem.state = NSControlStateValueOff;
+        self.talkItem.title = @"对话模式：已关闭（点一下开启）";
+    } else {
+        NSTask *t = [[NSTask alloc] init];
+        t.launchPath = @"/bin/bash";
+        t.arguments = @[script];
+        @try { [t launch]; } @catch (NSException *e) {}
+        self.talking = YES;
+        self.talkItem.state = NSControlStateValueOn;
+        self.talkItem.title = @"对话模式：已开启（点一下关掉）";
+    }
 }
 
 - (void)toggleThrough {
@@ -208,23 +263,47 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     // ---- 待机小动作：每隔十几秒来一下，让她不像个雕像
     if (self.idleKind == 0 && t >= self.nextIdle &&
         ([self.mood isEqualToString:@"idle"] || [self.mood isEqualToString:@"listening"])) {
-        self.idleKind = 1 + arc4random_uniform(3);
+        uint32_t pool[] = {1, 3, 4, 5, 6, 8, 2, 7};   // 挥手和哈欠少见一点
+        self.idleKind = (int)pool[arc4random_uniform(8)];
         self.idleStart = t;
     }
     if (self.idleKind != 0) {
-        double dur = (self.idleKind == 2) ? 2.4 : 1.8;
+        double dur = 1.8;
+        if (self.idleKind == 2) dur = 2.4;      // 挥手
+        if (self.idleKind == 7) dur = 2.2;      // 打哈欠
+        if (self.idleKind == 6) dur = 2.6;      // 挪步
         double k = (t - self.idleStart) / dur;
         if (k >= 1.0) {
             self.idleKind = 0;
-            self.nextIdle = t + 9.0 + (double)arc4random_uniform(14000) / 1000.0;
+            self.nextIdle = t + 5.5 + (double)arc4random_uniform(9000) / 1000.0;
         } else {
             double env = sin(k * M_PI);              // 0→1→0，起落都柔和
-            if (self.idleKind == 1) {                // 歪头
-                self.view.rot += env * 1.6;
-                self.view.dx += env * 2.0;
-            } else if (self.idleKind == 3) {         // 伸个懒腰：轻轻拔高
-                self.view.sy += env * 0.012;
-                self.view.dy += env * 2.5;
+            switch (self.idleKind) {
+                case 1:                              // 歪头
+                    self.view.rot += env * 2.0;
+                    self.view.dx += env * 2.4;
+                    break;
+                case 3:                              // 伸懒腰
+                    self.view.sy += env * 0.014;
+                    self.view.dy += env * 3.0;
+                    break;
+                case 4:                              // 点头两下
+                    self.view.dy -= sin(k * M_PI * 2.0) * 3.2;
+                    self.view.sy += sin(k * M_PI * 2.0) * 0.003;
+                    break;
+                case 5:                              // 小跳一下
+                    self.view.dy += sin(k * M_PI) * 7.0;
+                    self.view.sy -= env * 0.008;     // 起跳压扁一点
+                    break;
+                case 6:                              // 左右挪一步
+                    self.view.dx += sin(k * M_PI * 2.0) * 7.0;
+                    self.view.rot += sin(k * M_PI * 2.0) * 0.8;
+                    break;
+                case 8:                              // 慢慢转个身
+                    self.view.rot += sin(k * M_PI) * 2.6;
+                    break;
+                default:
+                    break;
             }
         }
     }
@@ -233,6 +312,8 @@ static NSString *const kMoodFile = @".tangyuan_mood";
     NSString *want = self.mood;
     if (self.idleKind == 2 && (t - self.idleStart) / 2.4 < 0.75) {
         want = @"wave";
+    } else if (self.idleKind == 7 && (t - self.idleStart) / 2.2 < 0.6) {
+        want = @"blink";                              // 打哈欠：闭眼 + 拔高
     }
     self.displayMood = self.bases[want] ? want : @"idle";
 
@@ -261,6 +342,12 @@ static NSString *const kMoodFile = @".tangyuan_mood";
         if (idx < 0) idx = 0;
         if (idx >= (NSInteger)self.mouths.count) idx = self.mouths.count - 1;
         mouthImg = self.mouths[idx];
+    }
+
+    if (mouthImg != nil) {                            // 说话时头部跟着音节轻点
+        self.view.dy += sin(t * 13.0) * 1.4;
+        self.view.sy += sin(t * 13.0) * 0.0015;
+        self.view.rot += sin(t * 6.5) * 0.35;
     }
 
     self.view.baseImg = self.bases[self.displayMood] ?: self.bases[@"idle"];
