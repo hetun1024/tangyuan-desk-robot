@@ -68,6 +68,7 @@ static NSString *const kMoodFile = @".tangyuan_mood";
 @property (nonatomic, strong) NSMutableDictionary<NSString *, NSImage *> *bases;
 @property (nonatomic, strong) NSMutableArray<NSImage *> *eyes;
 @property (nonatomic, strong) NSMutableArray<NSImage *> *mouths;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSArray<NSImage *> *> *anims;
 @property (nonatomic, copy) NSString *mood;
 @property (nonatomic) NSTimeInterval blinkStart;
 @property (nonatomic) NSTimeInterval blinkLen;
@@ -115,6 +116,7 @@ static NSString *const kMoodFile = @".tangyuan_mood";
         [NSApp terminate:nil];
         return;
     }
+    self.anims = [NSMutableDictionary dictionary];
     self.bases = [NSMutableDictionary dictionary];
     for (NSString *n in @[@"idle", @"blink", @"smile", @"surprised", @"talk",
                           @"sad", @"cry", @"angry", @"wave"]) {
@@ -142,6 +144,40 @@ static NSString *const kMoodFile = @".tangyuan_mood";
           (unsigned long)self.eyes.count,
           (unsigned long)self.mouths.count);
     self.mood = @"idle";
+}
+
+/// 有没有这个动作的逐帧动画（绿幕视频转出来的）
+- (NSArray<NSImage *> *)animFor:(NSString *)name {
+    NSArray *cached = self.anims[name];
+    if (cached) return cached.count ? cached : nil;
+
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSMutableArray *dirs = [NSMutableArray array];
+    NSURL *base = [self assetDir];
+    if (base) [dirs addObject:[[base URLByAppendingPathComponent:@"anim"]
+                               URLByAppendingPathComponent:name]];
+    NSString *alt = [@"~/tangyuan/assets/pet/anim" stringByExpandingTildeInPath];
+    [dirs addObject:[[NSURL fileURLWithPath:alt] URLByAppendingPathComponent:name]];
+
+    for (NSURL *dir in dirs) {
+        NSArray *files = [[fm contentsOfDirectoryAtPath:dir.path error:NULL]
+                          sortedArrayUsingSelector:@selector(compare:)];
+        if (files.count < 2) continue;
+        NSMutableArray *imgs = [NSMutableArray array];
+        for (NSString *f in files) {
+            if (![f.pathExtension.lowercaseString isEqualToString:@"png"]) continue;
+            NSImage *img = [[NSImage alloc] initWithContentsOfURL:
+                            [dir URLByAppendingPathComponent:f]];
+            if (img) [imgs addObject:img];
+        }
+        if (imgs.count) {
+            self.anims[name] = imgs;
+            [self log:[NSString stringWithFormat:@"载入动画 %@：%lu 帧", name, (unsigned long)imgs.count]];
+            return imgs;
+        }
+    }
+    self.anims[name] = @[];
+    return nil;
 }
 
 - (void)makeWindow {
@@ -217,10 +253,26 @@ static NSString *const kMoodFile = @".tangyuan_mood";
                                 : @"对话模式：已关闭（点一下开启）";
 }
 
+- (void)log:(NSString *)msg {
+    NSString *line = [NSString stringWithFormat:@"[%@] %@\n",
+                      [NSDate date], msg];
+    NSString *path = @"/tmp/tangyuan_pet.log";
+    NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:path];
+    if (!fh) {
+        [line writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:NULL];
+    } else {
+        [fh seekToEndOfFile];
+        [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+        [fh closeFile];
+    }
+}
+
 - (void)toggleTalk {
-    NSString *script = [@"~/Library/Application Support/tangyuan/start.sh"
+    // 用 open -a Terminal 打开脚本，而不是用 AppleScript 命令 Terminal：
+    // 后者需要「自动化」权限，默认是拒绝的，点了会毫无反应。
+    NSString *script = [@"~/Library/Application Support/tangyuan/brain.command"
                         stringByExpandingTildeInPath];
-    if ([self brainAlive]) {
+    if (self.talking) {
         NSTask *t = [[NSTask alloc] init];
         t.launchPath = @"/usr/bin/pkill";
         t.arguments = @[@"-f", @"main.py --talk"];
@@ -229,10 +281,26 @@ static NSString *const kMoodFile = @".tangyuan_mood";
         self.talkItem.state = NSControlStateValueOff;
         self.talkItem.title = @"对话模式：已关闭（点一下开启）";
     } else {
+        // 直接拉起来，不经 Terminal。第一次系统会问"是否允许访问下载文件夹"。
+        NSString *proj = @"/Users/pufferfish/tangyuan";
         NSTask *t = [[NSTask alloc] init];
-        t.launchPath = @"/bin/bash";
-        t.arguments = @[script];
-        @try { [t launch]; } @catch (NSException *e) {}
+        t.launchPath = @"/usr/bin/python3";
+        t.arguments = @[@"-u", @"main.py", @"--talk", @"--no-face", @"--no-camera"];
+        t.currentDirectoryURL = [NSURL fileURLWithPath:proj];
+        NSFileHandle *logFile = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/tangyuan_brain.log"];
+        if (!logFile) {
+            [[NSFileManager defaultManager] createFileAtPath:@"/tmp/tangyuan_brain.log"
+                                                    contents:nil attributes:nil];
+            logFile = [NSFileHandle fileHandleForWritingAtPath:@"/tmp/tangyuan_brain.log"];
+        }
+        t.standardOutput = logFile ?: [NSPipe pipe];
+        t.standardError = logFile ?: [NSPipe pipe];
+        @try {
+            [t launch];
+            [self log:[NSString stringWithFormat:@"直接启动大脑 pid=%d", t.processIdentifier]];
+        } @catch (NSException *e) {
+            [self log:[NSString stringWithFormat:@"启动失败: %@", e.reason]];
+        }
         self.talking = YES;
         self.talkItem.state = NSControlStateValueOn;
         self.talkItem.title = @"对话模式：已开启（点一下关掉）";
@@ -342,6 +410,19 @@ static NSString *const kMoodFile = @".tangyuan_mood";
         if (idx < 0) idx = 0;
         if (idx >= (NSInteger)self.mouths.count) idx = self.mouths.count - 1;
         mouthImg = self.mouths[idx];
+    }
+
+    // 有逐帧动画就用动画，这时**不要**再叠呼吸和晃动，否则会双重运动
+    NSArray<NSImage *> *anim = [self animFor:self.displayMood];
+    if (anim.count > 1) {
+        NSUInteger idx = (NSUInteger)(t * 20.0) % anim.count;
+        self.view.baseImg = anim[idx];
+        self.view.eyeImg = nil;
+        self.view.mouthImg = nil;
+        self.view.sx = 1.0; self.view.sy = 1.0;
+        self.view.dx = 0; self.view.dy = 0; self.view.rot = 0;
+        [self.view setNeedsDisplay:YES];
+        return;
     }
 
     if (mouthImg != nil) {                            // 说话时头部跟着音节轻点

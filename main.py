@@ -443,6 +443,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-voice", action="store_true", help="回答不念出来")
     ap.add_argument("--check", action="store_true", help="只检查 key 和网络")
     ap.add_argument("--no-face", action="store_true", help="不开表情窗口")
+    ap.add_argument("--no-camera", action="store_true",
+                    help="完全不碰摄像头（后台运行时必须加，否则系统会杀掉进程）")
     args = ap.parse_args(argv)
 
     cfg = Config.load(args.config)
@@ -480,6 +482,8 @@ def main(argv=None) -> int:
     print("她现在的状态：%s（熟 %d 天）" % (feel.mood_word, feel.streak_days))
 
     try:
+        if args.no_camera:
+            raise RuntimeError("后台模式不碰摄像头")
         from agent import eyes as _eyes
 
         lux = _eyes.brightness()
@@ -492,7 +496,7 @@ def main(argv=None) -> int:
     except Exception:  # noqa: BLE001
         pass
 
-    if not args.no_face:
+    if not args.no_camera and not args.no_face:
         if face_up():
             print("表情窗口：已连上（启动自检：先笑一下再回来）")
             _face("happy")

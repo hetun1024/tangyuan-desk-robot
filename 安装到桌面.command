@@ -36,6 +36,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>cc.drobotics.tangyuan.pet</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSUIElement</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>汤圆需要听你说话才能回应你。</string>
+  <key>NSCameraUsageDescription</key><string>汤圆用摄像头看你、判断房间明暗。</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
